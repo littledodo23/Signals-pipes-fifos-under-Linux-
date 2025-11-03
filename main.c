@@ -19,7 +19,8 @@ void show_menu() {
     printf("12. Multiply 2 matrices (multi-process)\n");
     printf("13. Find determinant of a matrix\n");
     printf("14. Benchmark operations (parallel vs single)\n");
-    printf("15. Exit\n");
+    printf("15. Compute largest eigenvalue/vector (multi-process)\n");
+    printf("16. Exit\n");
     printf("=======================================\n");
 }
 
@@ -130,6 +131,27 @@ void multiply_matrices_menu() {
     if (result_single) {
         free_matrix(result_single);
     }
+}
+
+void eigen_menu() {
+    Matrix *m = select_matrix("Select matrix for eigenvalue/vector computation:");
+    if (!m) return;
+
+    int n = m->rows;
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square!\n");
+        return;
+    }
+
+    double eigenvector[n];
+    double eigenvalue;
+
+    eigen_parallel(m, &eigenvalue, eigenvector);
+
+    printf("\nLargest eigenvalue: %.6lf\n", eigenvalue);
+    printf("Corresponding eigenvector:\n");
+    for (int i = 0; i < n; i++)
+        printf("%8.4lf\n", eigenvector[i]);
 }
 
 void determinant_menu() {
@@ -266,8 +288,11 @@ int main() {
             case 14:
                 benchmark_menu();
                 break;
-                
             case 15:
+                eigen_menu();
+                break;
+                
+            case 16:
                 printf("\n🧹 Cleaning up worker pool...\n");
                 cleanup_worker_pool();
                 
