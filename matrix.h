@@ -35,5 +35,7 @@ void read_matrices_from_folder_option();
 void save_matrix_to_file_option();
 void save_all_matrices_to_folder_option();
 void display_all_matrices();
+double determinant_parallel(Matrix *m);
 
 #endif
+
