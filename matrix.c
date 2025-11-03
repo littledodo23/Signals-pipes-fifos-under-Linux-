@@ -218,7 +218,7 @@ Matrix* multiply_matrices_parallel(Matrix *a, Matrix *b) {
         }
     }
 
-    // parent يقرأ النتائج
+    // parent  read result
     idx = 0;
     for (int i = 0; i < a->rows; i++) {
         for (int j = 0; j < b->cols; j++) {
@@ -553,6 +553,7 @@ void eigen_parallel(Matrix *m, double *eigenvalue, double *eigenvector) {
     }
     *eigenvalue = num / denom;
 }
+
 
 
 
