@@ -188,37 +188,46 @@ Matrix* subtract_matrices_parallel(Matrix *a, Matrix *b) {
 Matrix* multiply_matrices_parallel(Matrix *a, Matrix *b) {
     if (a->cols != b->rows) 
         return NULL;
+
     char name[50]; 
     sprintf(name, "%s_mul_%s", a->name, b->name);
     Matrix *res = create_matrix(a->rows, b->cols, name);
 
-    int rows = a->rows, cols = b->cols, common = a->cols;
-    int pipefds[rows][2];
+    int total_elements = a->rows * b->cols;
+    int (*pipefds)[2] = malloc(total_elements * sizeof(int[2]));
+    int idx = 0;
 
-    for (int i = 0; i < rows; i++) {
-        pipe(pipefds[i]);
-        pid_t pid = fork();
-        if (pid == 0) { // child
-            close(pipefds[i][0]);
-            for (int j = 0; j < cols; j++) {
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < b->cols; j++) {
+            pipe(pipefds[idx]);
+            pid_t pid = fork();
+            if (pid == 0) { // child
+                close(pipefds[idx][0]);
                 double sum = 0;
-                for (int k = 0; k < common; k++)
+                for (int k = 0; k < a->cols; k++)
                     sum += a->data[i][k] * b->data[k][j];
-                write(pipefds[i][1], &sum, sizeof(double));
+                write(pipefds[idx][1], &sum, sizeof(double));
+                close(pipefds[idx][1]);
+                exit(0);
+            } else { 
+                close(pipefds[idx][1]);
             }
-            close(pipefds[i][1]); exit(0);
-        } else { 
-            close(pipefds[i][1]); }
+            idx++;
+        }
     }
 
-    for (int i = 0; i < rows; i++) {
-         wait(NULL);
-        for (int j = 0; j < cols; j++)
-            read(pipefds[i][0], &res->data[i][j], sizeof(double));
-        close(pipefds[i][0]);
-       
+    // parent يقرأ النتائج
+    idx = 0;
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < b->cols; j++) {
+            wait(NULL);
+            read(pipefds[idx][0], &res->data[i][j], sizeof(double));
+            close(pipefds[idx][0]);
+            idx++;
+        }
     }
 
+    free(pipefds);
     return res;
 }
 
@@ -466,5 +475,6 @@ double determinant_parallel(Matrix *m) {
 
     return det;
 }
+
 
 
