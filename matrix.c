@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include "matrix.h"
 #include <dirent.h>
+#include <math.h>
 
 // ===== Global Variables =====
 Matrix *matrices[MAX_MATRICES];
@@ -54,6 +55,7 @@ void display_all_matrices();
 void read_matrix_from_file_option();
 void save_matrix_to_file_option();
 double determinant_parallel(Matrix *m);
+void eigen_parallel(Matrix *m, double *eigenvalue, double *eigenvector);
 
 // ===== SINGLE-THREADED Operations =====
 Matrix* add_matrices_single(Matrix *a, Matrix *b) {
@@ -475,6 +477,84 @@ double determinant_parallel(Matrix *m) {
 
     return det;
 }
+
+
+
+// ===== Parallel Power Iteration for largest eigenvalue =====
+void eigen_parallel(Matrix *m, double *eigenvalue, double *eigenvector) {
+    if (m->rows != m->cols) {
+        printf("Matrix must be square!\n");
+        return;
+    }
+
+    int n = m->rows;
+    double tol = 1e-6;
+    int max_iter = 1000;
+    
+    // Initialize eigenvector with 1's
+    for (int i = 0; i < n; i++)
+        eigenvector[i] = 1.0;
+
+    for (int iter = 0; iter < max_iter; iter++) {
+        double new_vector[n];
+        int pipefds[n][2];
+
+        // Parallel multiply: each child computes one row of M * vector
+        for (int i = 0; i < n; i++) {
+            pipe(pipefds[i]);
+            pid_t pid = fork();
+            if (pid == 0) { // child
+                close(pipefds[i][0]);
+                double sum = 0;
+                for (int j = 0; j < n; j++)
+                    sum += m->data[i][j] * eigenvector[j];
+                write(pipefds[i][1], &sum, sizeof(double));
+                close(pipefds[i][1]);
+                exit(0);
+            } else {
+                close(pipefds[i][1]);
+            }
+        }
+
+        // Parent reads results
+        for (int i = 0; i < n; i++) {
+            read(pipefds[i][0], &new_vector[i], sizeof(double));
+            close(pipefds[i][0]);
+            wait(NULL);
+        }
+
+        // Normalize new_vector
+        double norm = 0;
+        for (int i = 0; i < n; i++)
+            norm += new_vector[i] * new_vector[i];
+        norm = sqrt(norm);
+        for (int i = 0; i < n; i++)
+            new_vector[i] /= norm;
+
+        // Check convergence
+        double diff = 0;
+        for (int i = 0; i < n; i++)
+            diff += fabs(new_vector[i] - eigenvector[i]);
+        if (diff < tol) break;
+
+        // Copy new_vector to eigenvector
+        for (int i = 0; i < n; i++)
+            eigenvector[i] = new_vector[i];
+    }
+
+    // Compute corresponding eigenvalue: lambda = (v^T * M * v) / (v^T * v)
+    double num = 0, denom = 0;
+    for (int i = 0; i < n; i++) {
+        double mv_i = 0;
+        for (int j = 0; j < n; j++)
+            mv_i += m->data[i][j] * eigenvector[j];
+        num += eigenvector[i] * mv_i;
+        denom += eigenvector[i] * eigenvector[i];
+    }
+    *eigenvalue = num / denom;
+}
+
+
 
 
 
