@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include "matrix.h"
+#include <dirent.h>
 
 // ===== Global Variables =====
 Matrix *matrices[MAX_MATRICES];
@@ -50,6 +51,9 @@ void display_matrix();
 void delete_matrix();
 void modify_matrix();
 void display_all_matrices();
+void read_matrix_from_file_option();
+void save_matrix_to_file_option();
+double determinant_parallel(Matrix *m);
 
 // ===== SINGLE-THREADED Operations =====
 Matrix* add_matrices_single(Matrix *a, Matrix *b) {
@@ -114,7 +118,8 @@ Matrix* add_matrices_parallel(Matrix *a, Matrix *b) {
             }
             close(pipefds[i][1]); 
             exit(0);
-        } else { close(pipefds[i][1]); }
+        } else { 
+            close(pipefds[i][1]); }
     }
 
     for (int i = 0; i < rows; i++) {
@@ -154,10 +159,11 @@ Matrix* subtract_matrices_parallel(Matrix *a, Matrix *b) {
     }
 
     for (int i = 0; i < rows; i++) {
+        wait(NULL);
         for (int j = 0; j < cols; j++)
             read(pipefds[i][0], &res->data[i][j], sizeof(double));
         close(pipefds[i][0]);
-        wait(NULL);
+        
     }
 
     return res;
@@ -190,10 +196,11 @@ Matrix* multiply_matrices_parallel(Matrix *a, Matrix *b) {
     }
 
     for (int i = 0; i < rows; i++) {
+         wait(NULL);
         for (int j = 0; j < cols; j++)
             read(pipefds[i][0], &res->data[i][j], sizeof(double));
         close(pipefds[i][0]);
-        wait(NULL);
+       
     }
 
     return res;
@@ -292,5 +299,155 @@ void display_all_matrices() {
         return;}
     for(int i=0;i<matrix_count;i++) 
         print_matrix(matrices[i]);
+}
+
+void read_matrix_from_file_option() {
+    if (matrix_count >= MAX_MATRICES) {
+        printf("Memory full! Cannot load more matrices.\n");
+        return;
+    }
+
+    char filename[100];
+    printf("Enter file path (e.g., matrices/A.txt): ");
+    scanf("%s", filename);
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        perror("Error opening file");
+        return;
+    }
+
+    char name[50];
+    int rows, cols;
+    if (fscanf(f, "%s %d %d", name, &rows, &cols) != 3) {
+        printf("Invalid file format.\n");
+        fclose(f);
+        return;
+    }
+
+    Matrix *m = create_matrix(rows, cols, name);
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            if (fscanf(f, "%lf", &m->data[i][j]) != 1) {
+                printf("Error reading matrix values.\n");
+                fclose(f);
+                free_matrix(m);
+                return;
+            }
+        }
+    }
+
+    fclose(f);
+    matrices[matrix_count++] = m;
+    printf("Matrix '%s' loaded successfully from %s\n", name, filename);
+}
+
+
+void save_matrix_to_file_option() {
+    if (matrix_count == 0) {
+        printf("No matrices to save.\n");
+        return;
+    }
+
+    printf("Select matrix to save:\n");
+    for (int i = 0; i < matrix_count; i++)
+        printf("%d. %s (%dx%d)\n", i + 1, matrices[i]->name, matrices[i]->rows, matrices[i]->cols);
+
+    int choice;
+    printf("Enter choice: ");
+    scanf("%d", &choice);
+
+    if (choice < 1 || choice > matrix_count) {
+        printf("Invalid selection.\n");
+        return;
+    }
+
+    char filename[100];
+    printf("Enter filename to save (e.g., matrices/result.txt): ");
+    scanf("%s", filename);
+
+    FILE *f = fopen(filename, "w");
+    if (!f) {
+        perror("Error creating file");
+        return;
+    }
+
+    Matrix *m = matrices[choice - 1];
+    fprintf(f, "%s %d %d\n", m->name, m->rows, m->cols);
+    for (int i = 0; i < m->rows; i++) {
+        for (int j = 0; j < m->cols; j++)
+            fprintf(f, "%.4lf ", m->data[i][j]);
+        fprintf(f, "\n");
+    }
+
+    fclose(f);
+    printf("Matrix '%s' saved successfully to %s\n", m->name, filename);
+}
+
+
+// ===== Determinant Calculation (Parallel using fork) =====
+double determinant_parallel(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Matrix must be square!\n");
+        return 0.0;
+    }
+
+    int n = m->rows;
+
+    // Base cases
+    if (n == 1) return m->data[0][0];
+    if (n == 2) return (m->data[0][0] * m->data[1][1]) - (m->data[0][1] * m->data[1][0]);
+
+    double det = 0.0;
+    int pipes[n][2];
+
+    for (int i = 0; i < n; i++) {
+        if (pipe(pipes[i]) == -1) {
+            perror("Pipe creation failed");
+            exit(1);
+        }
+
+        pid_t pid = fork();
+        if (pid == 0) { // Child process
+            close(pipes[i][0]); // close read end
+
+            // Build submatrix (minor)
+            Matrix *minor = create_matrix(n - 1, n - 1, "minor");
+            for (int r = 1; r < n; r++) {
+                int c_index = 0;
+                for (int c = 0; c < n; c++) {
+                    if (c == i) continue;
+                    minor->data[r - 1][c_index++] = m->data[r][c];
+                }
+            }
+
+            double sub_det = determinant_parallel(minor);
+            free_matrix(minor);
+
+            double sign = (i % 2 == 0) ? 1.0 : -1.0;
+            double part = sign * m->data[0][i] * sub_det;
+
+            write(pipes[i][1], &part, sizeof(double));
+            close(pipes[i][1]);
+            kill(getppid(), SIGUSR1); // send signal to parent
+            exit(0);
+        }
+        else if (pid < 0) {
+            perror("Fork failed");
+            exit(1);
+        }
+        close(pipes[i][1]);
+    }
+
+    // Parent collects results
+    for (int i = 0; i < n; i++) {
+        double val;
+        read(pipes[i][0], &val, sizeof(double));
+        det += val;
+        close(pipes[i][0]);
+        wait(NULL);
+    }
+
+    return det;
 }
 
