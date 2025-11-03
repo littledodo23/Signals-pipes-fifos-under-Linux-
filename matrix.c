@@ -100,74 +100,90 @@ Matrix* multiply_matrices_single(Matrix *a, Matrix *b) {
 Matrix* add_matrices_parallel(Matrix *a, Matrix *b) {
     if (a->rows != b->rows || a->cols != b->cols) 
         return NULL;
+
     char name[50]; 
     sprintf(name, "%s_plus_%s", a->name, b->name);
     Matrix *res = create_matrix(a->rows, a->cols, name);
 
-    int rows = a->rows, cols = a->cols;
-    int pipefds[rows][2];
+    int total = a->rows * a->cols;
+    int (*pipefds)[2] = malloc(total * sizeof(int[2]));
+    int idx = 0;
 
-    for (int i = 0; i < rows; i++) {
-        pipe(pipefds[i]);
-        pid_t pid = fork();
-        if (pid == 0) { // child
-            close(pipefds[i][0]);
-            for (int j = 0; j < cols; j++) {
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < a->cols; j++) {
+            pipe(pipefds[idx]);
+            pid_t pid = fork();
+            if (pid == 0) { // child
+                close(pipefds[idx][0]);
                 double val = a->data[i][j] + b->data[i][j];
-                write(pipefds[i][1], &val, sizeof(double));
+                write(pipefds[idx][1], &val, sizeof(double));
+                close(pipefds[idx][1]);
+                exit(0);
+            } else { // parent
+                close(pipefds[idx][1]);
             }
-            close(pipefds[i][1]); 
-            exit(0);
-        } else { 
-            close(pipefds[i][1]); }
+            idx++;
+        }
     }
 
-    for (int i = 0; i < rows; i++) {
-        wait(NULL);
-        for (int j = 0; j < cols; j++)
-            read(pipefds[i][0], &res->data[i][j], sizeof(double));
-        close(pipefds[i][0]);
-        
+    idx = 0;
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < a->cols; j++) {
+            wait(NULL);
+            read(pipefds[idx][0], &res->data[i][j], sizeof(double));
+            close(pipefds[idx][0]);
+            idx++;
+        }
     }
 
+    free(pipefds);
     return res;
 }
+
 
 Matrix* subtract_matrices_parallel(Matrix *a, Matrix *b) {
     if (a->rows != b->rows || a->cols != b->cols) 
         return NULL;
+
     char name[50]; 
     sprintf(name, "%s_minus_%s", a->name, b->name);
     Matrix *res = create_matrix(a->rows, a->cols, name);
 
-    int rows = a->rows, cols = a->cols;
-    int pipefds[rows][2];
+    int total = a->rows * a->cols;
+    int (*pipefds)[2] = malloc(total * sizeof(int[2]));
+    int idx = 0;
 
-    for (int i = 0; i < rows; i++) {
-        pipe(pipefds[i]);
-        pid_t pid = fork();
-        if (pid == 0) { // child
-            close(pipefds[i][0]);
-            for (int j = 0; j < cols; j++) {
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < a->cols; j++) {
+            pipe(pipefds[idx]);
+            pid_t pid = fork();
+            if (pid == 0) { // child
+                close(pipefds[idx][0]);
                 double val = a->data[i][j] - b->data[i][j];
-                write(pipefds[i][1], &val, sizeof(double));
+                write(pipefds[idx][1], &val, sizeof(double));
+                close(pipefds[idx][1]);
+                exit(0);
+            } else { // parent
+                close(pipefds[idx][1]);
             }
-            close(pipefds[i][1]); 
-            exit(0);
-        } else { 
-            close(pipefds[i][1]); }
+            idx++;
+        }
     }
 
-    for (int i = 0; i < rows; i++) {
-        wait(NULL);
-        for (int j = 0; j < cols; j++)
-            read(pipefds[i][0], &res->data[i][j], sizeof(double));
-        close(pipefds[i][0]);
-        
+    idx = 0;
+    for (int i = 0; i < a->rows; i++) {
+        for (int j = 0; j < a->cols; j++) {
+            wait(NULL);
+            read(pipefds[idx][0], &res->data[i][j], sizeof(double));
+            close(pipefds[idx][0]);
+            idx++;
+        }
     }
 
+    free(pipefds);
     return res;
 }
+
 
 Matrix* multiply_matrices_parallel(Matrix *a, Matrix *b) {
     if (a->cols != b->rows) 
@@ -450,4 +466,5 @@ double determinant_parallel(Matrix *m) {
 
     return det;
 }
+
 
