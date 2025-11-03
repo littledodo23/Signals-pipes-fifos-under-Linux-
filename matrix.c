@@ -118,10 +118,11 @@ Matrix* add_matrices_parallel(Matrix *a, Matrix *b) {
     }
 
     for (int i = 0; i < rows; i++) {
+        wait(NULL);
         for (int j = 0; j < cols; j++)
             read(pipefds[i][0], &res->data[i][j], sizeof(double));
         close(pipefds[i][0]);
-        wait(NULL);
+        
     }
 
     return res;
@@ -292,3 +293,4 @@ void display_all_matrices() {
     for(int i=0;i<matrix_count;i++) 
         print_matrix(matrices[i]);
 }
+
