@@ -38,4 +38,3 @@ void display_all_matrices();
 double determinant_parallel(Matrix *m);
 
 #endif
-
