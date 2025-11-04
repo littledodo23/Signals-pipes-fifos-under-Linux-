@@ -19,8 +19,7 @@ void show_menu() {
     printf("12. Multiply 2 matrices (multi-process)\n");
     printf("13. Find determinant of a matrix\n");
     printf("14. Benchmark operations (parallel vs single)\n");
-    printf("15. Compute largest eigenvalue/vector (multi-process)\n");
-    printf("16. Exit\n");
+    printf("15. Exit\n");
     printf("=======================================\n");
 }
 
