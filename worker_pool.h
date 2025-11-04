@@ -25,18 +25,20 @@ typedef enum {
 } OperationType;
 
 // ===== Message Structure for IPC =====
+#define MAX_VECTOR_SIZE 2000
 typedef struct {
     OperationType op_type;
     double operand1;
     double operand2;
     double result;
     int row_size;               // For multiplication
-    double row_data[100];       // Row vector
-    double col_data[100];       // Column vector
+    double row_data[MAX_VECTOR_SIZE];       // Row vector
+    double col_data[MAX_VECTOR_SIZE];       // Column vector
 } WorkMessage;
 
 // ===== Global Pool =====
 #define MAX_WORKERS 100
+#define PARALLEL_THRESHOLD 1000  // Only parallelize if total_work > this
 extern Worker *worker_pool;
 extern int pool_size;
 extern int max_idle_time;
@@ -58,6 +60,11 @@ Matrix* add_matrices_parallel(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_parallel(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_parallel(Matrix *m1, Matrix *m2);
 double determinant_parallel(Matrix *m);
+
+// Process-based versions (using pipes/IPC)
+Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2);
+Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2);
+Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2);
 
 // Single-threaded versions for comparison
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2);
