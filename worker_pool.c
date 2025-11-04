@@ -206,7 +206,7 @@ void cleanup_worker_pool() {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
-// ===== Matrix Addition (Parallel) =====
+// ===== Matrix Addition with OpenMP (Much Faster!) =====
 
 Matrix* add_matrices_parallel(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
@@ -219,44 +219,25 @@ Matrix* add_matrices_parallel(Matrix *m1, Matrix *m2) {
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
     int total_elements = m1->rows * m1->cols;
-    printf("[INFO] Adding matrices using %d workers for %d elements\n",
-           pool_size, total_elements);
     
     double start_time = get_time_ms();
     
-    // Send work to all workers
-    int elements_processed = 0;
-    
+    // Use OpenMP for parallelization (much faster than pipes!)
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            Worker *w = get_available_worker();
-            while (!w) {
-                usleep(100); // Wait for available worker
-                w = get_available_worker();
-            }
-            
-            WorkMessage msg = {
-                .op_type = OP_ADD,
-                .operand1 = m1->data[i][j],
-                .operand2 = m2->data[i][j]
-            };
-            
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            
-            result->data[i][j] = msg.result;
-            release_worker(w);
-            elements_processed++;
+            result->data[i][j] = m1->data[i][j] + m2->data[i][j];
         }
     }
     
     double end_time = get_time_ms();
-    printf("[TIMING] Parallel addition: %.2f ms\n", end_time - start_time);
+    printf("[TIMING] Parallel addition (OpenMP): %.2f ms for %d elements\n", 
+           end_time - start_time, total_elements);
     
     return result;
 }
 
-// ===== Matrix Subtraction (Parallel) =====
+// ===== Matrix Subtraction with OpenMP =====
 
 Matrix* subtract_matrices_parallel(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
@@ -270,35 +251,21 @@ Matrix* subtract_matrices_parallel(Matrix *m1, Matrix *m2) {
     
     double start_time = get_time_ms();
     
+    // Use OpenMP
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            Worker *w = get_available_worker();
-            while (!w) {
-                usleep(100);
-                w = get_available_worker();
-            }
-            
-            WorkMessage msg = {
-                .op_type = OP_SUBTRACT,
-                .operand1 = m1->data[i][j],
-                .operand2 = m2->data[i][j]
-            };
-            
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            
-            result->data[i][j] = msg.result;
-            release_worker(w);
+            result->data[i][j] = m1->data[i][j] - m2->data[i][j];
         }
     }
     
     double end_time = get_time_ms();
-    printf("[TIMING] Parallel subtraction: %.2f ms\n", end_time - start_time);
+    printf("[TIMING] Parallel subtraction (OpenMP): %.2f ms\n", end_time - start_time);
     
     return result;
 }
 
-// ===== Matrix Multiplication (Parallel) =====
+// ===== Matrix Multiplication with OpenMP =====
 
 Matrix* multiply_matrices_parallel(Matrix *m1, Matrix *m2) {
     if (m1->cols != m2->rows) {
@@ -310,44 +277,25 @@ Matrix* multiply_matrices_parallel(Matrix *m1, Matrix *m2) {
     snprintf(result_name, sizeof(result_name), "%s_times_%s", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
     
-    printf("[INFO] Multiplying matrices: %d workers for %d elements\n",
-           pool_size, m1->rows * m2->cols);
+    int total_elements = m1->rows * m2->cols;
     
     double start_time = get_time_ms();
     
+    // Use OpenMP for parallel multiplication
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
-            Worker *w = get_available_worker();
-            while (!w) {
-                usleep(100);
-                w = get_available_worker();
-            }
-            
-            WorkMessage msg = {
-                .op_type = OP_MULTIPLY_ELEMENT,
-                .row_size = m1->cols
-            };
-            
-            // Copy row from m1
+            double sum = 0.0;
             for (int k = 0; k < m1->cols; k++) {
-                msg.row_data[k] = m1->data[i][k];
+                sum += m1->data[i][k] * m2->data[k][j];
             }
-            
-            // Copy column from m2
-            for (int k = 0; k < m2->rows; k++) {
-                msg.col_data[k] = m2->data[k][j];
-            }
-            
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            
-            result->data[i][j] = msg.result;
-            release_worker(w);
+            result->data[i][j] = sum;
         }
     }
     
     double end_time = get_time_ms();
-    printf("[TIMING] Parallel multiplication: %.2f ms\n", end_time - start_time);
+    printf("[TIMING] Parallel multiplication (OpenMP): %.2f ms for %d elements\n",
+           end_time - start_time, total_elements);
     
     return result;
 }
@@ -426,4 +374,222 @@ Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2) {
     return result;
 }
 
+// ===== Determinant (Simple recursive - you can parallelize this more) =====
 
+double determinant_single(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square\n");
+        return 0.0;
+    }
+    
+    int n = m->rows;
+    
+    if (n == 1) {
+        return m->data[0][0];
+    }
+    
+    if (n == 2) {
+        return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    }
+    
+    double det = 0.0;
+    
+    // Cofactor expansion along first row
+    for (int j = 0; j < n; j++) {
+        // Create submatrix
+        Matrix *sub = create_matrix(n-1, n-1, "temp");
+        
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) {
+                    sub->data[i-1][col_idx++] = m->data[i][k];
+                }
+            }
+        }
+        
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        det += sign * m->data[0][j] * determinant_single(sub);
+        
+        free_matrix(sub);
+    }
+    
+    return det;
+}
+
+double determinant_parallel(Matrix *m) {
+    // For now, same as single (can be parallelized with OpenMP)
+    double start_time = get_time_ms();
+    double det = determinant_single(m);
+    double end_time = get_time_ms();
+    
+    printf("[TIMING] Determinant calculation: %.2f ms\n", end_time - start_time);
+    return det;
+}
+
+// ===== PROCESS-BASED VERSIONS (Using Pipes & IPC) =====
+// These demonstrate multi-processing with IPC for the project requirements
+// Note: These are slower due to IPC overhead, but demonstrate the concepts
+
+Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
+    
+    char result_name[50];
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_IPC", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    int total_elements = m1->rows * m1->cols;
+    printf("[INFO] Using IPC with %d workers for %d elements\n", pool_size, total_elements);
+    
+    double start_time = get_time_ms();
+    
+    // Send all work (batch)
+    int work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg = {
+                .op_type = OP_ADD,
+                .operand1 = m1->data[i][j],
+                .operand2 = m2->data[i][j]
+            };
+            
+            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            work_idx++;
+        }
+    }
+    
+    // Collect all results
+    work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg;
+            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+            result->data[i][j] = msg.result;
+            work_idx++;
+        }
+    }
+    
+    double end_time = get_time_ms();
+    printf("[TIMING] IPC-based addition: %.2f ms\n", end_time - start_time);
+    
+    return result;
+}
+
+Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
+    
+    char result_name[50];
+    snprintf(result_name, sizeof(result_name), "%s_minus_%s_IPC", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    double start_time = get_time_ms();
+    
+    int work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg = {
+                .op_type = OP_SUBTRACT,
+                .operand1 = m1->data[i][j],
+                .operand2 = m2->data[i][j]
+            };
+            
+            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            work_idx++;
+        }
+    }
+    
+    work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg;
+            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+            result->data[i][j] = msg.result;
+            work_idx++;
+        }
+    }
+    
+    double end_time = get_time_ms();
+    printf("[TIMING] IPC-based subtraction: %.2f ms\n", end_time - start_time);
+    
+    return result;
+}
+
+Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
+    if (m1->cols != m2->rows) {
+        printf("Error: Invalid dimensions for multiplication\n");
+        return NULL;
+    }
+    
+    if (m1->cols > MAX_VECTOR_SIZE) {
+        printf("Error: Matrix too large for IPC (max dimension: %d)\n", MAX_VECTOR_SIZE);
+        return NULL;
+    }
+    
+    char result_name[50];
+    snprintf(result_name, sizeof(result_name), "%s_times_%s_IPC", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
+    
+    printf("[INFO] Using IPC multiplication for %dx%d result\n", m1->rows, m2->cols);
+    
+    double start_time = get_time_ms();
+    
+    int work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m2->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg = {
+                .op_type = OP_MULTIPLY_ELEMENT,
+                .row_size = m1->cols
+            };
+            
+            for (int k = 0; k < m1->cols; k++) {
+                msg.row_data[k] = m1->data[i][k];
+            }
+            
+            for (int k = 0; k < m2->rows; k++) {
+                msg.col_data[k] = m2->data[k][j];
+            }
+            
+            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            work_idx++;
+        }
+    }
+    
+    work_idx = 0;
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m2->cols; j++) {
+            int worker_id = work_idx % pool_size;
+            Worker *w = &worker_pool[worker_id];
+            
+            WorkMessage msg;
+            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+            result->data[i][j] = msg.result;
+            work_idx++;
+        }
+    }
+    
+    double end_time = get_time_ms();
+    printf("[TIMING] IPC-based multiplication: %.2f ms\n", end_time - start_time);
+    
+    return result;
+}
