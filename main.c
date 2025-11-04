@@ -287,24 +287,22 @@ int main() {
             case 14:
                 benchmark_menu();
                 break;
-            case 15:
-                eigen_menu();
-                break;
+
                 
-            case 16:
-                printf("\n🧹 Cleaning up worker pool...\n");
+            case 15:
+                printf("\n Cleaning up worker pool...\n");
                 cleanup_worker_pool();
                 
-                printf("🗑️  Freeing matrices...\n");
+                printf("  Freeing matrices...\n");
                 for (int i = 0; i < matrix_count; i++) {
                     free_matrix(matrices[i]);
                 }
                 
-                printf("👋 Goodbye!\n");
+                printf(" Goodbye!\n");
                 exit(0);
                 
             default:
-                printf("⚠️  Invalid choice! Please try again.\n");
+                printf("  Invalid choice! Please try again.\n");
         }
         
         // Periodically age out idle workers
