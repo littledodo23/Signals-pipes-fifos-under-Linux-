@@ -20,25 +20,29 @@ typedef enum {
     OP_ADD,
     OP_SUBTRACT,
     OP_MULTIPLY_ELEMENT,
-    OP_DETERMINANT,
+    OP_DETERMINANT_2X2,
+    OP_MATRIX_VECTOR_MULTIPLY,
     OP_EXIT
 } OperationType;
 
 // ===== Message Structure for IPC =====
 #define MAX_VECTOR_SIZE 2000
+#define MAX_MATRIX_SIZE 100
 typedef struct {
     OperationType op_type;
     double operand1;
     double operand2;
     double result;
-    int row_size;               // For multiplication
-    double row_data[MAX_VECTOR_SIZE];       // Row vector
-    double col_data[MAX_VECTOR_SIZE];       // Column vector
+    int row_size;
+    int matrix_size;
+    double row_data[MAX_VECTOR_SIZE];
+    double col_data[MAX_VECTOR_SIZE];
+    double matrix_data[MAX_MATRIX_SIZE][MAX_MATRIX_SIZE];
+    double vector_data[MAX_VECTOR_SIZE];
 } WorkMessage;
 
 // ===== Global Pool =====
 #define MAX_WORKERS 100
-#define PARALLEL_THRESHOLD 1000  // Only parallelize if total_work > this
 extern Worker *worker_pool;
 extern int pool_size;
 extern int max_idle_time;
@@ -55,26 +59,22 @@ void age_workers();
 // Worker process functions
 void worker_process_loop(int input_fd, int output_fd);
 
-// Matrix operations with multiprocessing
-Matrix* add_matrices_parallel(Matrix *m1, Matrix *m2);
-Matrix* subtract_matrices_parallel(Matrix *m1, Matrix *m2);
-Matrix* multiply_matrices_parallel(Matrix *m1, Matrix *m2);
-double determinant_parallel(Matrix *m);
-
-// Process-based versions (using pipes/IPC)
+// Process-based matrix operations (PRIMARY METHODS - using pipes/IPC)
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2);
+double determinant_with_processes(Matrix *m);
+void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
 
 // Single-threaded versions for comparison
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2);
 double determinant_single(Matrix *m);
+void compute_eigen_single(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
 
 // Performance timing
 double get_time_ms();
-void benchmark_operation(const char *op_name, Matrix *m1, Matrix *m2);
 
 // Signal handlers
 void setup_signal_handlers();
