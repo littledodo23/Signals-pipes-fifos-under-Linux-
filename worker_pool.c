@@ -374,11 +374,11 @@ Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-// ===== Determinant (Simple recursive - you can parallelize this more) =====
+// ===== Determinant Calculation =====
 
-double determinant_single(Matrix *m) {
+// Helper function for single-threaded determinant (recursive)
+double determinant_recursive(Matrix *m) {
     if (m->rows != m->cols) {
-        printf("Error: Matrix must be square\n");
         return 0.0;
     }
     
@@ -397,7 +397,7 @@ double determinant_single(Matrix *m) {
     // Cofactor expansion along first row
     for (int j = 0; j < n; j++) {
         // Create submatrix
-        Matrix *sub = create_matrix(n-1, n-1, "temp");
+        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
         
         for (int i = 1; i < n; i++) {
             int col_idx = 0;
@@ -409,7 +409,7 @@ double determinant_single(Matrix *m) {
         }
         
         double sign = (j % 2 == 0) ? 1.0 : -1.0;
-        det += sign * m->data[0][j] * determinant_single(sub);
+        det += sign * m->data[0][j] * determinant_recursive(sub);
         
         free_matrix(sub);
     }
@@ -417,13 +417,81 @@ double determinant_single(Matrix *m) {
     return det;
 }
 
-double determinant_parallel(Matrix *m) {
-    // For now, same as single (can be parallelized with OpenMP)
+// Single-threaded determinant with timing
+double determinant_single(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square\n");
+        return 0.0;
+    }
+    
     double start_time = get_time_ms();
-    double det = determinant_single(m);
+    double det = determinant_recursive(m);
     double end_time = get_time_ms();
     
-    printf("[TIMING] Determinant calculation: %.2f ms\n", end_time - start_time);
+    printf("[TIMING] Single-threaded determinant: %.2f ms\n", end_time - start_time);
+    return det;
+}
+
+// Parallel determinant with OpenMP (parallelizes cofactor expansion)
+double determinant_parallel_recursive(Matrix *m) {
+    if (m->rows != m->cols) {
+        return 0.0;
+    }
+    
+    int n = m->rows;
+    
+    if (n == 1) {
+        return m->data[0][0];
+    }
+    
+    if (n == 2) {
+        return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    }
+    
+    // For small matrices, don't parallelize (overhead not worth it)
+    if (n <= 4) {
+        return determinant_recursive(m);
+    }
+    
+    double det = 0.0;
+    
+    // Parallel cofactor expansion along first row
+    #pragma omp parallel for reduction(+:det) if(n > 4)
+    for (int j = 0; j < n; j++) {
+        // Create submatrix
+        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
+        
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) {
+                    sub->data[i-1][col_idx++] = m->data[i][k];
+                }
+            }
+        }
+        
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        double sub_det = determinant_recursive(sub); // Recursive calls stay serial
+        det += sign * m->data[0][j] * sub_det;
+        
+        free_matrix(sub);
+    }
+    
+    return det;
+}
+
+// Parallel determinant with timing
+double determinant_parallel(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square\n");
+        return 0.0;
+    }
+    
+    double start_time = get_time_ms();
+    double det = determinant_parallel_recursive(m);
+    double end_time = get_time_ms();
+    
+    printf("[TIMING] Parallel determinant (OpenMP): %.2f ms\n", end_time - start_time);
     return det;
 }
 
