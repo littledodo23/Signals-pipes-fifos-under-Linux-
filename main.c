@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "matrix.h"
 #include "worker_pool.h"
+#include "eigen.h"
 
 void clear_input_buffer() {
     int c;
@@ -41,8 +42,9 @@ void show_menu() {
     printf("11. Subtract 2 matrices (OpenMP parallel)\n");
     printf("12. Multiply 2 matrices (OpenMP parallel)\n");
     printf("13. Find determinant of a matrix\n");
-    printf("14. Benchmark operations (parallel vs single)\n");
-    printf("15. Exit\n");
+    printf("14. Find eigenvalues & eigenvectors\n");
+    printf("15. Benchmark operations (parallel vs single)\n");
+    printf("16. Exit\n");
     printf("=======================================\n");
 }
 
@@ -186,6 +188,43 @@ void determinant_menu() {
            det_parallel - det_single);
 }
 
+void eigenvalues_menu() {
+    Matrix *m = select_matrix("Select matrix for eigenvalue computation:");
+    if (!m) return;
+
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square!\n");
+        return;
+    }
+
+    printf("\n=== EIGENVALUE & EIGENVECTOR CALCULATION ===\n");
+    printf("Matrix: %s (%dx%d)\n", m->name, m->rows, m->cols);
+    
+    int num_eigen = get_int_input("How many eigenvalues to compute? (1 to %d): ", 
+                                   1, m->rows);
+
+    printf("\n--- Running PARALLEL eigen computation (OpenMP) ---\n");
+    EigenResult *result_parallel = compute_eigen_parallel(m, num_eigen);
+
+    printf("\n--- Running SINGLE-THREADED eigen computation ---\n");
+    EigenResult *result_single = compute_eigen_single(m, num_eigen);
+
+    if (result_parallel) {
+        printf("\n=== PARALLEL RESULTS ===");
+        print_eigen_result(result_parallel, m->rows);
+        free_eigen_result(result_parallel);
+    }
+
+    if (result_single) {
+        printf("\n=== SINGLE-THREADED RESULTS ===");
+        print_eigen_result(result_single, m->rows);
+        free_eigen_result(result_single);
+    }
+
+    printf("\nNote: For large matrices, eigenvalue computation can be intensive.\n");
+    printf("The dominant eigenvalue (largest magnitude) has a computed eigenvector.\n");
+}
+
 void benchmark_menu() {
     printf("\n=== BENCHMARK MODE ===\n");
     printf("This will compare parallel vs single-threaded performance.\n\n");
@@ -243,6 +282,31 @@ void benchmark_menu() {
         printf("Determinant value: %.6f\n", d1);
     }
 
+    // Eigenvalue benchmark (if square and not too large)
+    if (m1->rows == m1->cols && m1->rows <= 10) {
+        printf("\n=== EIGENVALUE BENCHMARK (Matrix 1: %s) ===\n", m1->name);
+        printf("Computing dominant eigenvalue...\n");
+        EigenResult *e1 = compute_eigen_parallel(m1, 1);
+        EigenResult *e2 = compute_eigen_single(m1, 1);
+        if (e1) {
+            printf("Dominant eigenvalue: %.6f\n", e1->eigenvalues[0]);
+            free_eigen_result(e1);
+        }
+        if (e2) free_eigen_result(e2);
+    }
+
+    if (m2->rows == m2->cols && m2 != m1 && m2->rows <= 10) {
+        printf("\n=== EIGENVALUE BENCHMARK (Matrix 2: %s) ===\n", m2->name);
+        printf("Computing dominant eigenvalue...\n");
+        EigenResult *e1 = compute_eigen_parallel(m2, 1);
+        EigenResult *e2 = compute_eigen_single(m2, 1);
+        if (e1) {
+            printf("Dominant eigenvalue: %.6f\n", e1->eigenvalues[0]);
+            free_eigen_result(e1);
+        }
+        if (e2) free_eigen_result(e2);
+    }
+
     printf("\n=== BENCHMARK COMPLETE ===\n");
 }
 
@@ -262,7 +326,7 @@ int main() {
 
     while (1) {
         show_menu();
-        choice = get_int_input("Enter your choice: ", 1, 15);
+        choice = get_int_input("Enter your choice: ", 1, 16);
 
         switch (choice) {
             case 1: enter_matrix(); break;
@@ -278,8 +342,9 @@ int main() {
             case 11: subtract_matrices_menu(); break;
             case 12: multiply_matrices_menu(); break;
             case 13: determinant_menu(); break;
-            case 14: benchmark_menu(); break;
-            case 15:
+            case 14: eigenvalues_menu(); break;
+            case 15: benchmark_menu(); break;
+            case 16:
                 printf("\nCleaning up worker pool...\n");
                 cleanup_worker_pool();
 
