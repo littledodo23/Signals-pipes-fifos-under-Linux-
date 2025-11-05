@@ -3,6 +3,7 @@
 #include "matrix.h"
 #include "worker_pool.h"
 #include "eigen.h"
+#include "config.h"
 
 void clear_input_buffer() {
     int c;
@@ -76,7 +77,7 @@ void add_matrices_menu() {
     }
 
     printf("\n=== ADDITION OPERATION ===\n");
-    printf("Using multi-processing with pipes (IPC)...\n\n");
+    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
 
     double start_ipc = get_time_ms();
     Matrix *result_ipc = add_matrices_with_processes(m1, m2);
@@ -87,10 +88,10 @@ void add_matrices_menu() {
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:     %.2f ms\n", time_single);
+    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:              %.2f ms\n", time_single);
     if (time_ipc > 0) {
-        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
     }
 
     if (result_ipc) {
@@ -118,7 +119,7 @@ void subtract_matrices_menu() {
     }
 
     printf("\n=== SUBTRACTION OPERATION ===\n");
-    printf("Using multi-processing with pipes (IPC)...\n\n");
+    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
 
     double start_ipc = get_time_ms();
     Matrix *result_ipc = subtract_matrices_with_processes(m1, m2);
@@ -129,10 +130,10 @@ void subtract_matrices_menu() {
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:     %.2f ms\n", time_single);
+    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:              %.2f ms\n", time_single);
     if (time_ipc > 0) {
-        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
     }
 
     if (result_ipc) {
@@ -165,7 +166,7 @@ void multiply_matrices_menu() {
     }
 
     printf("\n=== MULTIPLICATION OPERATION ===\n");
-    printf("Using multi-processing with pipes (IPC)...\n\n");
+    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
 
     double start_ipc = get_time_ms();
     Matrix *result_ipc = multiply_matrices_with_processes(m1, m2);
@@ -176,10 +177,10 @@ void multiply_matrices_menu() {
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:     %.2f ms\n", time_single);
+    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:              %.2f ms\n", time_single);
     if (time_ipc > 0) {
-        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
     }
 
     if (result_ipc) {
@@ -215,10 +216,10 @@ void determinant_menu() {
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Parallel time:        %.2f ms\n", time_parallel);
-    printf("Single-threaded time: %.2f ms\n", time_single);
+    printf("Parallel (Worker Pool) time: %.2f ms\n", time_parallel);
+    printf("Single-threaded time:         %.2f ms\n", time_single);
     if (time_parallel > 0) {
-        printf("Speedup factor:       %.2fx\n", time_single / time_parallel);
+        printf("Speedup factor:               %.2fx\n", time_single / time_parallel);
     }
 
     printf("\n=== RESULTS ===\n");
@@ -268,19 +269,27 @@ void eigenvalues_menu() {
     printf("\nNote: The dominant eigenvalue has a computed eigenvector.\n");
 }
 
-int main() {
-    int choice;
-
+int main(int argc, char *argv[]) {
     printf("===========================================\n");
     printf(" Matrix Operations with Multi-Processing\n");
     printf(" Real-Time & Embedded Systems Project\n");
     printf("===========================================\n\n");
 
+    // Load configuration file
+    const char *config_file = (argc > 1) ? argv[1] : "matrix_config.txt";
+    init_default_config();
+    load_config(config_file);
+    
+    Config *cfg = get_config();
+
     setup_signal_handlers();
 
-    int pool_sz = get_int_input("Enter worker pool size (recommended: 4-8): ", 1, MAX_WORKERS);
-    init_worker_pool(pool_sz);
+    // Initialize worker pool with configured size
+    printf("\nInitializing system with %d workers...\n", cfg->worker_pool_size);
+    init_worker_pool(cfg->worker_pool_size);
+    max_idle_time = cfg->max_idle_time;
 
+    int choice;
     while (1) {
         show_menu();
         choice = get_int_input("Enter your choice: ", 1, 15);
