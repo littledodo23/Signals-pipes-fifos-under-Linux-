@@ -17,11 +17,13 @@
 Worker *worker_pool = NULL;
 int pool_size = 0;
 int max_idle_time = 60;
+volatile sig_atomic_t workers_completed = 0;
 
 // ===== Signal Handlers =====
 
 void sigusr1_handler(int signo) {
     (void)signo;
+    workers_completed++;
 }
 
 void sigchld_handler(int signo) {
@@ -29,19 +31,23 @@ void sigchld_handler(int signo) {
     int status;
     pid_t pid;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        for (int i = 0; i < pool_size; i++) {
-            if (worker_pool[i].pid == pid) {
-                worker_pool[i].alive = 0;
-                worker_pool[i].available = 0;
-                printf("[INFO] Worker %d (PID %d) terminated\n", i, pid);
-            }
-        }
+        // Child terminated
     }
 }
 
 void setup_signal_handlers() {
-    signal(SIGUSR1, sigusr1_handler);
-    signal(SIGCHLD, sigchld_handler);
+    struct sigaction sa_usr1;
+    sa_usr1.sa_handler = sigusr1_handler;
+    sigemptyset(&sa_usr1.sa_mask);
+    sa_usr1.sa_flags = 0;
+    sigaction(SIGUSR1, &sa_usr1, NULL);
+    
+    struct sigaction sa_chld;
+    sa_chld.sa_handler = sigchld_handler;
+    sigemptyset(&sa_chld.sa_mask);
+    sa_chld.sa_flags = SA_NOCLDSTOP;
+    sigaction(SIGCHLD, &sa_chld, NULL);
+    
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -127,6 +133,9 @@ void worker_process_loop(int input_fd, int output_fd) {
         }
         
         write(output_fd, &msg, sizeof(WorkMessage));
+        
+        // Signal parent that work is done
+        kill(getppid(), SIGUSR1);
     }
     
     close(input_fd);
@@ -204,7 +213,7 @@ void age_workers() {
                 write(worker_pool[i].input_pipe[1], &msg, sizeof(WorkMessage));
                 worker_pool[i].alive = 0;
                 printf("[INFO] Aged out worker %d (idle for %ld seconds)\n",
-                       i, now - worker_pool[i].last_used);
+                       i, (long)(now - worker_pool[i].last_used));
             }
         }
     }
@@ -230,7 +239,7 @@ void cleanup_worker_pool() {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
-// ===== REQUIRED: PROCESS-BASED OPERATIONS (with optional OpenMP in loops) =====
+// ===== PROCESS-BASED OPERATIONS (Per-Element Children as Required) =====
 
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
@@ -243,47 +252,57 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
     int total_elements = m1->rows * m1->cols;
-    printf("[INFO] Using %d worker processes for %d elements\n", pool_size, total_elements);
+    printf("[INFO] Creating %d child processes (one per element)\n", total_elements);
     
-    // Send work (OpenMP optional optimization for the sending loop)
-    int work_idx = 0;
-    #pragma omp parallel for collapse(2) if(total_elements > 1000)
+    pid_t *pids = malloc(total_elements * sizeof(pid_t));
+    int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
+    
+    // Create one child per element
+    int idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            int local_idx;
-            #pragma omp critical
-            {
-                local_idx = work_idx++;
+            if (pipe(pipes[idx]) == -1) {
+                perror("pipe");
+                exit(1);
             }
-            int worker_id = local_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
             
-            WorkMessage msg = {
-                .op_type = OP_ADD,
-                .operand1 = m1->data[i][j],
-                .operand2 = m2->data[i][j]
-            };
-            
-            #pragma omp critical
-            {
-                write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                exit(1);
             }
+            
+            if (pid == 0) {
+                // Child process
+                close(pipes[idx][0]);
+                double result_val = m1->data[i][j] + m2->data[i][j];
+                write(pipes[idx][1], &result_val, sizeof(double));
+                close(pipes[idx][1]);
+                exit(0);
+            }
+            
+            // Parent
+            close(pipes[idx][1]);
+            pids[idx] = pid;
+            idx++;
         }
     }
     
     // Collect results
-    work_idx = 0;
+    idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
-            
-            WorkMessage msg;
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            result->data[i][j] = msg.result;
-            work_idx++;
+            double result_val;
+            read(pipes[idx][0], &result_val, sizeof(double));
+            result->data[i][j] = result_val;
+            close(pipes[idx][0]);
+            waitpid(pids[idx], NULL, 0);
+            idx++;
         }
     }
+    
+    free(pids);
+    free(pipes);
     
     return result;
 }
@@ -298,35 +317,54 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
     snprintf(result_name, sizeof(result_name), "%s_minus_%s", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
-    int work_idx = 0;
+    int total_elements = m1->rows * m1->cols;
+    printf("[INFO] Creating %d child processes (one per element)\n", total_elements);
+    
+    pid_t *pids = malloc(total_elements * sizeof(pid_t));
+    int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
+    
+    int idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
+            if (pipe(pipes[idx]) == -1) {
+                perror("pipe");
+                exit(1);
+            }
             
-            WorkMessage msg = {
-                .op_type = OP_SUBTRACT,
-                .operand1 = m1->data[i][j],
-                .operand2 = m2->data[i][j]
-            };
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                exit(1);
+            }
             
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            work_idx++;
+            if (pid == 0) {
+                close(pipes[idx][0]);
+                double result_val = m1->data[i][j] - m2->data[i][j];
+                write(pipes[idx][1], &result_val, sizeof(double));
+                close(pipes[idx][1]);
+                exit(0);
+            }
+            
+            close(pipes[idx][1]);
+            pids[idx] = pid;
+            idx++;
         }
     }
     
-    work_idx = 0;
+    idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
-            
-            WorkMessage msg;
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            result->data[i][j] = msg.result;
-            work_idx++;
+            double result_val;
+            read(pipes[idx][0], &result_val, sizeof(double));
+            result->data[i][j] = result_val;
+            close(pipes[idx][0]);
+            waitpid(pids[idx], NULL, 0);
+            idx++;
         }
     }
+    
+    free(pids);
+    free(pipes);
     
     return result;
 }
@@ -337,58 +375,67 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
         return NULL;
     }
     
-    if (m1->cols > MAX_VECTOR_SIZE) {
-        printf("Error: Matrix too large for IPC (max dimension: %d)\n", MAX_VECTOR_SIZE);
-        return NULL;
-    }
-    
     char result_name[50];
     snprintf(result_name, sizeof(result_name), "%s_times_%s", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
     
-    printf("[INFO] Using worker processes for %dx%d result matrix\n", m1->rows, m2->cols);
+    int total_processes = m1->rows * m2->cols;
+    printf("[INFO] Creating %d child processes (rows × cols)\n", total_processes);
     
-    int work_idx = 0;
+    pid_t *pids = malloc(total_processes * sizeof(pid_t));
+    int (*pipes)[2] = malloc(total_processes * sizeof(int[2]));
+    
+    int idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
-            
-            WorkMessage msg = {
-                .op_type = OP_MULTIPLY_ELEMENT,
-                .row_size = m1->cols
-            };
-            
-            for (int k = 0; k < m1->cols; k++) {
-                msg.row_data[k] = m1->data[i][k];
+            if (pipe(pipes[idx]) == -1) {
+                perror("pipe");
+                exit(1);
             }
             
-            for (int k = 0; k < m2->rows; k++) {
-                msg.col_data[k] = m2->data[k][j];
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                exit(1);
             }
             
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            work_idx++;
+            if (pid == 0) {
+                // Child computes dot product
+                close(pipes[idx][0]);
+                double result_val = 0.0;
+                for (int k = 0; k < m1->cols; k++) {
+                    result_val += m1->data[i][k] * m2->data[k][j];
+                }
+                write(pipes[idx][1], &result_val, sizeof(double));
+                close(pipes[idx][1]);
+                exit(0);
+            }
+            
+            close(pipes[idx][1]);
+            pids[idx] = pid;
+            idx++;
         }
     }
     
-    work_idx = 0;
+    idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
-            
-            WorkMessage msg;
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            result->data[i][j] = msg.result;
-            work_idx++;
+            double result_val;
+            read(pipes[idx][0], &result_val, sizeof(double));
+            result->data[i][j] = result_val;
+            close(pipes[idx][0]);
+            waitpid(pids[idx], NULL, 0);
+            idx++;
         }
     }
+    
+    free(pids);
+    free(pipes);
     
     return result;
 }
 
-// ===== DETERMINANT WITH PROCESSES (with OpenMP optimization in recursive calls) =====
+// ===== DETERMINANT WITH PROCESSES =====
 
 double determinant_recursive_processes(Matrix *m) {
     if (m->rows != m->cols) return 0.0;
@@ -400,59 +447,88 @@ double determinant_recursive_processes(Matrix *m) {
     }
     
     if (n == 2) {
-        int worker_id = 0;
-        Worker *w = &worker_pool[worker_id];
+        return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    }
+    
+    // Use processes for cofactor expansion
+    int num_processes = n;
+    pid_t *pids = malloc(num_processes * sizeof(pid_t));
+    int (*pipes)[2] = malloc(num_processes * sizeof(int[2]));
+    
+    for (int j = 0; j < n; j++) {
+        if (pipe(pipes[j]) == -1) {
+            perror("pipe");
+            exit(1);
+        }
         
-        WorkMessage msg = {.op_type = OP_DETERMINANT_2X2};
-        msg.matrix_data[0][0] = m->data[0][0];
-        msg.matrix_data[0][1] = m->data[0][1];
-        msg.matrix_data[1][0] = m->data[1][0];
-        msg.matrix_data[1][1] = m->data[1][1];
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            exit(1);
+        }
         
-        write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-        read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+        if (pid == 0) {
+            // Child computes cofactor
+            close(pipes[j][0]);
+            
+            Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
+            for (int i = 1; i < n; i++) {
+                int col_idx = 0;
+                for (int k = 0; k < n; k++) {
+                    if (k != j) {
+                        sub->data[i-1][col_idx++] = m->data[i][k];
+                    }
+                }
+            }
+            
+            double sub_det = determinant_recursive_processes(sub);
+            double sign = (j % 2 == 0) ? 1.0 : -1.0;
+            double cofactor = sign * m->data[0][j] * sub_det;
+            
+            write(pipes[j][1], &cofactor, sizeof(double));
+            close(pipes[j][1]);
+            free_matrix(sub);
+            exit(0);
+        }
         
-        return msg.result;
+        close(pipes[j][1]);
+        pids[j] = pid;
     }
     
     double det = 0.0;
-    
-    // OPTIONAL: OpenMP to parallelize cofactor expansion for larger matrices
-    #pragma omp parallel for reduction(+:det) if(n > 5)
     for (int j = 0; j < n; j++) {
-        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
-        
-        for (int i = 1; i < n; i++) {
-            int col_idx = 0;
-            for (int k = 0; k < n; k++) {
-                if (k != j) {
-                    sub->data[i-1][col_idx++] = m->data[i][k];
-                }
-            }
-        }
-        
-        double sign = (j % 2 == 0) ? 1.0 : -1.0;
-        det += sign * m->data[0][j] * determinant_recursive_processes(sub);
-        
-        free_matrix(sub);
+        double cofactor;
+        read(pipes[j][0], &cofactor, sizeof(double));
+        det += cofactor;
+        close(pipes[j][0]);
+        waitpid(pids[j], NULL, 0);
     }
+    
+    free(pids);
+    free(pipes);
     
     return det;
 }
 
-double determinant_with_processes(Matrix *m) {
+double determinant_parallel(Matrix *m) {
     if (m->rows != m->cols) {
         printf("Error: Matrix must be square\n");
         return 0.0;
     }
     
+    printf("[INFO] Computing determinant using multi-processing\n");
     return determinant_recursive_processes(m);
 }
 
-// ===== EIGENVALUES WITH PROCESSES (with OpenMP optimization) =====
+// Alias for compatibility
+double determinant_with_processes(Matrix *m) {
+    return determinant_parallel(m);
+}
+
+// ===== EIGENVALUES WITH PROCESSES =====
 
 void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors) {
-    if (m->rows != m->cols || m->rows > MAX_MATRIX_SIZE) {
+    if (m->rows != m->cols) {
         printf("Error: Invalid matrix for eigenvalue computation\n");
         return;
     }
@@ -461,7 +537,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     double *v = malloc(n * sizeof(double));
     double *v_new = malloc(n * sizeof(double));
     
-    // Initialize with simple vector
     #pragma omp parallel for
     for (int i = 0; i < n; i++) {
         v[i] = 1.0;
@@ -472,39 +547,46 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     double tolerance = 1e-6;
     
     for (int iter = 0; iter < max_iterations; iter++) {
-        // Matrix-vector multiply using processes
-        int work_idx = 0;
+        // Use processes for matrix-vector multiply
+        pid_t *pids = malloc(n * sizeof(pid_t));
+        int (*pipes)[2] = malloc(n * sizeof(int[2]));
+        
         for (int i = 0; i < n; i++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
-            
-            WorkMessage msg = {
-                .op_type = OP_MATRIX_VECTOR_MULTIPLY,
-                .matrix_size = n
-            };
-            
-            for (int j = 0; j < n; j++) {
-                msg.matrix_data[i][j] = m->data[i][j];
-                msg.vector_data[j] = v[j];
+            if (pipe(pipes[i]) == -1) {
+                perror("pipe");
+                exit(1);
             }
             
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            work_idx++;
-        }
-        
-        // Collect results
-        work_idx = 0;
-        for (int i = 0; i < n; i++) {
-            int worker_id = work_idx % pool_size;
-            Worker *w = &worker_pool[worker_id];
+            pid_t pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                exit(1);
+            }
             
-            WorkMessage msg;
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            v_new[i] = msg.row_data[i];
-            work_idx++;
+            if (pid == 0) {
+                close(pipes[i][0]);
+                double row_result = 0.0;
+                for (int j = 0; j < n; j++) {
+                    row_result += m->data[i][j] * v[j];
+                }
+                write(pipes[i][1], &row_result, sizeof(double));
+                close(pipes[i][1]);
+                exit(0);
+            }
+            
+            close(pipes[i][1]);
+            pids[i] = pid;
         }
         
-        // Compute eigenvalue (OPTIONAL: OpenMP for dot product)
+        for (int i = 0; i < n; i++) {
+            read(pipes[i][0], &v_new[i], sizeof(double));
+            close(pipes[i][0]);
+            waitpid(pids[i], NULL, 0);
+        }
+        
+        free(pids);
+        free(pipes);
+        
         double lambda = 0.0;
         #pragma omp parallel for reduction(+:lambda)
         for (int i = 0; i < n; i++) {
@@ -513,7 +595,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
         
         normalize_vector(v_new, n);
         
-        // Check convergence
         double diff = 0.0;
         for (int i = 0; i < n; i++) {
             diff += fabs(v_new[i] - v[i]);
