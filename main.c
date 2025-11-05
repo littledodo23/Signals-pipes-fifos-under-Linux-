@@ -38,13 +38,12 @@ void show_menu() {
     printf("7.  Save a matrix to a file\n");
     printf("8.  Save all matrices in memory to a folder\n");
     printf("9.  Display all matrices in memory\n");
-    printf("10. Add 2 matrices (OpenMP parallel)\n");
-    printf("11. Subtract 2 matrices (OpenMP parallel)\n");
-    printf("12. Multiply 2 matrices (OpenMP parallel)\n");
+    printf("10. Add 2 matrices\n");
+    printf("11. Subtract 2 matrices\n");
+    printf("12. Multiply 2 matrices\n");
     printf("13. Find determinant of a matrix\n");
     printf("14. Find eigenvalues & eigenvectors\n");
-    printf("15. Benchmark operations (parallel vs single)\n");
-    printf("16. Exit\n");
+    printf("15. Exit\n");
     printf("=======================================\n");
 }
 
@@ -76,25 +75,34 @@ void add_matrices_menu() {
         return;
     }
 
-    printf("\n--- Running PARALLEL addition ---\n");
-    Matrix *result_parallel = add_matrices_parallel(m1, m2);
+    printf("\n=== ADDITION OPERATION ===\n");
+    printf("Using multi-processing with pipes (IPC)...\n\n");
 
-    printf("\n--- Running SINGLE-THREADED addition ---\n");
+    double start_ipc = get_time_ms();
+    Matrix *result_ipc = add_matrices_with_processes(m1, m2);
+    double time_ipc = get_time_ms() - start_ipc;
+
+    double start_single = get_time_ms();
     Matrix *result_single = add_matrices_single(m1, m2);
+    double time_single = get_time_ms() - start_single;
 
-    if (result_parallel) {
-        printf("\nResult (parallel):\n");
-        print_matrix(result_parallel);
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:     %.2f ms\n", time_single);
+    if (time_ipc > 0) {
+        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+    }
 
+    if (result_ipc) {
+        printf("\nResult:\n");
+        print_matrix(result_ipc);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_parallel;
-            printf("Result saved to memory as '%s'.\n", result_parallel->name);
+            matrices[matrix_count++] = result_ipc;
+            printf("Result saved to memory as '%s'.\n", result_ipc->name);
         }
     }
 
-    if (result_single) {
-        free_matrix(result_single);
-    }
+    if (result_single) free_matrix(result_single);
 }
 
 void subtract_matrices_menu() {
@@ -109,25 +117,34 @@ void subtract_matrices_menu() {
         return;
     }
 
-    printf("\n--- Running PARALLEL subtraction ---\n");
-    Matrix *result_parallel = subtract_matrices_parallel(m1, m2);
+    printf("\n=== SUBTRACTION OPERATION ===\n");
+    printf("Using multi-processing with pipes (IPC)...\n\n");
 
-    printf("\n--- Running SINGLE-THREADED subtraction ---\n");
+    double start_ipc = get_time_ms();
+    Matrix *result_ipc = subtract_matrices_with_processes(m1, m2);
+    double time_ipc = get_time_ms() - start_ipc;
+
+    double start_single = get_time_ms();
     Matrix *result_single = subtract_matrices_single(m1, m2);
+    double time_single = get_time_ms() - start_single;
 
-    if (result_parallel) {
-        printf("\nResult (parallel):\n");
-        print_matrix(result_parallel);
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:     %.2f ms\n", time_single);
+    if (time_ipc > 0) {
+        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+    }
 
+    if (result_ipc) {
+        printf("\nResult:\n");
+        print_matrix(result_ipc);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_parallel;
-            printf("Result saved to memory as '%s'.\n", result_parallel->name);
+            matrices[matrix_count++] = result_ipc;
+            printf("Result saved to memory as '%s'.\n", result_ipc->name);
         }
     }
 
-    if (result_single) {
-        free_matrix(result_single);
-    }
+    if (result_single) free_matrix(result_single);
 }
 
 void multiply_matrices_menu() {
@@ -142,25 +159,39 @@ void multiply_matrices_menu() {
         return;
     }
 
-    printf("\n--- Running PARALLEL multiplication ---\n");
-    Matrix *result_parallel = multiply_matrices_parallel(m1, m2);
+    if (m1->cols > MAX_VECTOR_SIZE) {
+        printf("Error: Matrix dimension exceeds IPC buffer limit (%d).\n", MAX_VECTOR_SIZE);
+        return;
+    }
 
-    printf("\n--- Running SINGLE-THREADED multiplication ---\n");
+    printf("\n=== MULTIPLICATION OPERATION ===\n");
+    printf("Using multi-processing with pipes (IPC)...\n\n");
+
+    double start_ipc = get_time_ms();
+    Matrix *result_ipc = multiply_matrices_with_processes(m1, m2);
+    double time_ipc = get_time_ms() - start_ipc;
+
+    double start_single = get_time_ms();
     Matrix *result_single = multiply_matrices_single(m1, m2);
+    double time_single = get_time_ms() - start_single;
 
-    if (result_parallel) {
-        printf("\nResult (parallel):\n");
-        print_matrix(result_parallel);
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Multi-process (IPC) time: %.2f ms\n", time_ipc);
+    printf("Single-threaded time:     %.2f ms\n", time_single);
+    if (time_ipc > 0) {
+        printf("Speedup factor:           %.2fx\n", time_single / time_ipc);
+    }
 
+    if (result_ipc) {
+        printf("\nResult:\n");
+        print_matrix(result_ipc);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_parallel;
-            printf("Result saved to memory as '%s'.\n", result_parallel->name);
+            matrices[matrix_count++] = result_ipc;
+            printf("Result saved to memory as '%s'.\n", result_ipc->name);
         }
     }
 
-    if (result_single) {
-        free_matrix(result_single);
-    }
+    if (result_single) free_matrix(result_single);
 }
 
 void determinant_menu() {
@@ -175,17 +206,23 @@ void determinant_menu() {
     printf("\n=== DETERMINANT CALCULATION ===\n");
     printf("Matrix: %s (%dx%d)\n\n", m->name, m->rows, m->cols);
 
-    printf("--- Running PARALLEL determinant (OpenMP) ---\n");
+    double start_parallel = get_time_ms();
     double det_parallel = determinant_parallel(m);
+    double time_parallel = get_time_ms() - start_parallel;
 
-    printf("\n--- Running SINGLE-THREADED determinant ---\n");
+    double start_single = get_time_ms();
     double det_single = determinant_single(m);
+    double time_single = get_time_ms() - start_single;
+
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Parallel time:        %.2f ms\n", time_parallel);
+    printf("Single-threaded time: %.2f ms\n", time_single);
+    if (time_parallel > 0) {
+        printf("Speedup factor:       %.2fx\n", time_single / time_parallel);
+    }
 
     printf("\n=== RESULTS ===\n");
-    printf("Determinant (parallel):        %.6f\n", det_parallel);
-    printf("Determinant (single-threaded): %.6f\n", det_single);
-    printf("Difference:                    %.10f (should be ~0)\n", 
-           det_parallel - det_single);
+    printf("Determinant: %.6f\n", det_parallel);
 }
 
 void eigenvalues_menu() {
@@ -203,111 +240,32 @@ void eigenvalues_menu() {
     int num_eigen = get_int_input("How many eigenvalues to compute? (1 to %d): ", 
                                    1, m->rows);
 
-    printf("\n--- Running PARALLEL eigen computation (OpenMP) ---\n");
+    double start_parallel = get_time_ms();
     EigenResult *result_parallel = compute_eigen_parallel(m, num_eigen);
+    double time_parallel = get_time_ms() - start_parallel;
 
-    printf("\n--- Running SINGLE-THREADED eigen computation ---\n");
+    double start_single = get_time_ms();
     EigenResult *result_single = compute_eigen_single(m, num_eigen);
+    double time_single = get_time_ms() - start_single;
+
+    printf("\n=== PERFORMANCE COMPARISON ===\n");
+    printf("Parallel time:        %.2f ms\n", time_parallel);
+    printf("Single-threaded time: %.2f ms\n", time_single);
+    if (time_parallel > 0) {
+        printf("Speedup factor:       %.2fx\n", time_single / time_parallel);
+    }
 
     if (result_parallel) {
-        printf("\n=== PARALLEL RESULTS ===");
+        printf("\n=== RESULTS ===");
         print_eigen_result(result_parallel, m->rows);
         free_eigen_result(result_parallel);
     }
 
     if (result_single) {
-        printf("\n=== SINGLE-THREADED RESULTS ===");
-        print_eigen_result(result_single, m->rows);
         free_eigen_result(result_single);
     }
 
-    printf("\nNote: For large matrices, eigenvalue computation can be intensive.\n");
-    printf("The dominant eigenvalue (largest magnitude) has a computed eigenvector.\n");
-}
-
-void benchmark_menu() {
-    printf("\n=== BENCHMARK MODE ===\n");
-    printf("This will compare parallel vs single-threaded performance.\n\n");
-
-    Matrix *m1 = select_matrix("Select first matrix:");
-    if (!m1) return;
-
-    Matrix *m2 = select_matrix("Select second matrix:");
-    if (!m2) return;
-
-    if (m1->rows != m2->rows || m1->cols != m2->cols) {
-        printf("Warning: Matrices have different dimensions.\n");
-        printf("Only operations with compatible dimensions will be benchmarked.\n\n");
-    }
-
-    // Addition benchmark
-    if (m1->rows == m2->rows && m1->cols == m2->cols) {
-        printf("\n=== ADDITION BENCHMARK ===\n");
-        Matrix *r1 = add_matrices_parallel(m1, m2);
-        Matrix *r2 = add_matrices_single(m1, m2);
-        if (r1) free_matrix(r1);
-        if (r2) free_matrix(r2);
-    }
-
-    // Subtraction benchmark
-    if (m1->rows == m2->rows && m1->cols == m2->cols) {
-        printf("\n=== SUBTRACTION BENCHMARK ===\n");
-        Matrix *r1 = subtract_matrices_parallel(m1, m2);
-        Matrix *r2 = subtract_matrices_single(m1, m2);
-        if (r1) free_matrix(r1);
-        if (r2) free_matrix(r2);
-    }
-
-    // Multiplication benchmark
-    if (m1->cols == m2->rows) {
-        printf("\n=== MULTIPLICATION BENCHMARK ===\n");
-        Matrix *r1 = multiply_matrices_parallel(m1, m2);
-        Matrix *r2 = multiply_matrices_single(m1, m2);
-        if (r1) free_matrix(r1);
-        if (r2) free_matrix(r2);
-    }
-
-    // Determinant benchmarks (if square matrices)
-    if (m1->rows == m1->cols) {
-        printf("\n=== DETERMINANT BENCHMARK (Matrix 1: %s) ===\n", m1->name);
-        double d1 = determinant_parallel(m1);
-        double d2 = determinant_single(m1);
-        printf("Determinant value: %.6f\n", d1);
-    }
-
-    if (m2->rows == m2->cols && m2 != m1) {
-        printf("\n=== DETERMINANT BENCHMARK (Matrix 2: %s) ===\n", m2->name);
-        double d1 = determinant_parallel(m2);
-        double d2 = determinant_single(m2);
-        printf("Determinant value: %.6f\n", d1);
-    }
-
-    // Eigenvalue benchmark (if square and not too large)
-    if (m1->rows == m1->cols && m1->rows <= 10) {
-        printf("\n=== EIGENVALUE BENCHMARK (Matrix 1: %s) ===\n", m1->name);
-        printf("Computing dominant eigenvalue...\n");
-        EigenResult *e1 = compute_eigen_parallel(m1, 1);
-        EigenResult *e2 = compute_eigen_single(m1, 1);
-        if (e1) {
-            printf("Dominant eigenvalue: %.6f\n", e1->eigenvalues[0]);
-            free_eigen_result(e1);
-        }
-        if (e2) free_eigen_result(e2);
-    }
-
-    if (m2->rows == m2->cols && m2 != m1 && m2->rows <= 10) {
-        printf("\n=== EIGENVALUE BENCHMARK (Matrix 2: %s) ===\n", m2->name);
-        printf("Computing dominant eigenvalue...\n");
-        EigenResult *e1 = compute_eigen_parallel(m2, 1);
-        EigenResult *e2 = compute_eigen_single(m2, 1);
-        if (e1) {
-            printf("Dominant eigenvalue: %.6f\n", e1->eigenvalues[0]);
-            free_eigen_result(e1);
-        }
-        if (e2) free_eigen_result(e2);
-    }
-
-    printf("\n=== BENCHMARK COMPLETE ===\n");
+    printf("\nNote: The dominant eigenvalue has a computed eigenvector.\n");
 }
 
 int main() {
@@ -320,13 +278,12 @@ int main() {
 
     setup_signal_handlers();
 
-    int pool_sz;
-    pool_sz = get_int_input("Enter worker pool size (recommended: 4-8): ", 1, MAX_WORKERS);
+    int pool_sz = get_int_input("Enter worker pool size (recommended: 4-8): ", 1, MAX_WORKERS);
     init_worker_pool(pool_sz);
 
     while (1) {
         show_menu();
-        choice = get_int_input("Enter your choice: ", 1, 16);
+        choice = get_int_input("Enter your choice: ", 1, 15);
 
         switch (choice) {
             case 1: enter_matrix(); break;
@@ -343,16 +300,13 @@ int main() {
             case 12: multiply_matrices_menu(); break;
             case 13: determinant_menu(); break;
             case 14: eigenvalues_menu(); break;
-            case 15: benchmark_menu(); break;
-            case 16:
+            case 15:
                 printf("\nCleaning up worker pool...\n");
                 cleanup_worker_pool();
-
                 printf("Freeing matrices...\n");
                 for (int i = 0; i < matrix_count; i++) {
                     free_matrix(matrices[i]);
                 }
-
                 printf("Goodbye!\n");
                 exit(0);
             default:
