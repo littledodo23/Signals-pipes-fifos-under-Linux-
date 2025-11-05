@@ -170,9 +170,20 @@ void determinant_menu() {
         return;
     }
 
-    printf("\nCalculating determinant...\n");
-    double det = determinant_parallel(m);
-    printf("\nDeterminant of %s = %.4f\n", m->name, det);
+    printf("\n=== DETERMINANT CALCULATION ===\n");
+    printf("Matrix: %s (%dx%d)\n\n", m->name, m->rows, m->cols);
+
+    printf("--- Running PARALLEL determinant (OpenMP) ---\n");
+    double det_parallel = determinant_parallel(m);
+
+    printf("\n--- Running SINGLE-THREADED determinant ---\n");
+    double det_single = determinant_single(m);
+
+    printf("\n=== RESULTS ===\n");
+    printf("Determinant (parallel):        %.6f\n", det_parallel);
+    printf("Determinant (single-threaded): %.6f\n", det_single);
+    printf("Difference:                    %.10f (should be ~0)\n", 
+           det_parallel - det_single);
 }
 
 void benchmark_menu() {
@@ -186,28 +197,50 @@ void benchmark_menu() {
     if (!m2) return;
 
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
-        printf("Matrices must have same dimensions for this benchmark.\n");
-        return;
+        printf("Warning: Matrices have different dimensions.\n");
+        printf("Only operations with compatible dimensions will be benchmarked.\n\n");
     }
 
-    printf("\n=== ADDITION BENCHMARK ===\n");
-    Matrix *r1 = add_matrices_parallel(m1, m2);
-    Matrix *r2 = add_matrices_single(m1, m2);
-    if (r1) free_matrix(r1);
-    if (r2) free_matrix(r2);
-
-    printf("\n=== SUBTRACTION BENCHMARK ===\n");
-    r1 = subtract_matrices_parallel(m1, m2);
-    r2 = subtract_matrices_single(m1, m2);
-    if (r1) free_matrix(r1);
-    if (r2) free_matrix(r2);
-
-    if (m1->cols == m2->rows) {
-        printf("\n=== MULTIPLICATION BENCHMARK ===\n");
-        r1 = multiply_matrices_parallel(m1, m2);
-        r2 = multiply_matrices_single(m1, m2);
+    // Addition benchmark
+    if (m1->rows == m2->rows && m1->cols == m2->cols) {
+        printf("\n=== ADDITION BENCHMARK ===\n");
+        Matrix *r1 = add_matrices_parallel(m1, m2);
+        Matrix *r2 = add_matrices_single(m1, m2);
         if (r1) free_matrix(r1);
         if (r2) free_matrix(r2);
+    }
+
+    // Subtraction benchmark
+    if (m1->rows == m2->rows && m1->cols == m2->cols) {
+        printf("\n=== SUBTRACTION BENCHMARK ===\n");
+        Matrix *r1 = subtract_matrices_parallel(m1, m2);
+        Matrix *r2 = subtract_matrices_single(m1, m2);
+        if (r1) free_matrix(r1);
+        if (r2) free_matrix(r2);
+    }
+
+    // Multiplication benchmark
+    if (m1->cols == m2->rows) {
+        printf("\n=== MULTIPLICATION BENCHMARK ===\n");
+        Matrix *r1 = multiply_matrices_parallel(m1, m2);
+        Matrix *r2 = multiply_matrices_single(m1, m2);
+        if (r1) free_matrix(r1);
+        if (r2) free_matrix(r2);
+    }
+
+    // Determinant benchmarks (if square matrices)
+    if (m1->rows == m1->cols) {
+        printf("\n=== DETERMINANT BENCHMARK (Matrix 1: %s) ===\n", m1->name);
+        double d1 = determinant_parallel(m1);
+        double d2 = determinant_single(m1);
+        printf("Determinant value: %.6f\n", d1);
+    }
+
+    if (m2->rows == m2->cols && m2 != m1) {
+        printf("\n=== DETERMINANT BENCHMARK (Matrix 2: %s) ===\n", m2->name);
+        double d1 = determinant_parallel(m2);
+        double d2 = determinant_single(m2);
+        printf("Determinant value: %.6f\n", d1);
     }
 
     printf("\n=== BENCHMARK COMPLETE ===\n");
