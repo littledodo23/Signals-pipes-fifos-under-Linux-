@@ -28,6 +28,7 @@ typedef enum {
 // ===== Message Structure for IPC =====
 #define MAX_VECTOR_SIZE 2000
 #define MAX_MATRIX_SIZE 100
+
 typedef struct {
     OperationType op_type;
     double operand1;
@@ -49,35 +50,33 @@ extern int max_idle_time;
 
 // ===== Function Prototypes =====
 
-// Pool management
+// Worker pool management
 void init_worker_pool(int size);
-void cleanup_worker_pool();
-Worker* get_available_worker();
+void cleanup_worker_pool(void);
+Worker* get_available_worker(void);
 void release_worker(Worker *w);
-void age_workers();
+void age_workers(void);
 
-// Worker process functions
+// Worker process main loop
 void worker_process_loop(int input_fd, int output_fd);
 
-// Process-based matrix operations (PRIMARY METHODS - using pipes/IPC)
+// Process-based matrix operations (using signals + pipes)
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2);
 double determinant_with_processes(Matrix *m);
-void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
 
-// Single-threaded versions for comparison
+// Single-threaded versions (for comparison)
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2);
 double determinant_single(Matrix *m);
-void compute_eigen_single(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
 
-// Performance timing
-double get_time_ms();
+// Timing utility
+double get_time_ms(void);
 
 // Signal handlers
-void setup_signal_handlers();
+void setup_signal_handlers(void);
 void sigusr1_handler(int signo);
 void sigchld_handler(int signo);
 
