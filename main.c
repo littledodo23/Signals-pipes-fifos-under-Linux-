@@ -4,6 +4,7 @@
 #include "worker_pool.h"
 #include "eigen.h"
 #include "config.h"
+#include "file_io.h"
 
 void clear_input_buffer() {
     int c;
