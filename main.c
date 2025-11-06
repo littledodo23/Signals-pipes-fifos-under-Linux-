@@ -276,7 +276,7 @@ int main(int argc, char *argv[]) {
     printf("===========================================\n\n");
 
     // Load configuration file
-    const char *config_file = (argc > 1) ? argv[1] : "matrix_config.txt";
+   const char *config_file = (argc > 1) ? argv[1] : "matrix_config.txt";
     init_default_config();
     load_config(config_file);
     
@@ -284,10 +284,15 @@ int main(int argc, char *argv[]) {
 
     setup_signal_handlers();
 
+
     // Initialize worker pool with configured size
     printf("\nInitializing system with %d workers...\n", cfg->worker_pool_size);
     init_worker_pool(cfg->worker_pool_size);
     max_idle_time = cfg->max_idle_time;
+
+    // Load matrices from file (if provided as argument, else use default)
+    const char *mat_file = (argc > 2) ? argv[2] : "matrix.txt";
+    load_matrices_from_file(mat_file);
 
     int choice;
     while (1) {
