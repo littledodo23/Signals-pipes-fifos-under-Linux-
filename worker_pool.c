@@ -399,19 +399,13 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
     snprintf(result_name, sizeof(result_name), "%s_times_%s", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
     
-    int total_processes = m1->rows * m2->cols;
-    printf("[INFO] Creating %d child processes (rows × cols = %d × %d) using fork()\n", 
-           total_processes, m1->rows, m2->cols);
-    printf("[INFO] Each child computes dot product of ONE row × ONE column\n");
-    printf("[INFO] Using PIPES for IPC and SIGNALS for synchronization\n");
-    
+    int total_processes = m1->rows * m2->cols; // ديناميكي حسب حجم المصفوفة
     pid_t *pids = malloc(total_processes * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_processes * sizeof(int[2]));
     
     workers_completed = 0;
-    
-    // Create one child per result element
     int idx = 0;
+    
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
             if (pipe(pipes[idx]) == -1) {
@@ -426,26 +420,20 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
             }
             
             if (pid == 0) {
-                // CHILD PROCESS - computes dot product
-                close(pipes[idx][0]);
+                close(pipes[idx][0]); // Close read end
                 
                 double result_val = 0.0;
-                
-                // Use OpenMP to parallelize the dot product computation
-                #pragma omp parallel for reduction(+:result_val)
                 for (int k = 0; k < m1->cols; k++) {
-                    result_val += m1->data[i][k] * m2->data[k][j];
+                    result_val += m1->data[i][k] * m2->data[k][j]; // صف × عمود
                 }
                 
                 write(pipes[idx][1], &result_val, sizeof(double));
                 close(pipes[idx][1]);
-                
                 kill(getppid(), SIGUSR1);
-                
                 exit(0);
             }
             
-            close(pipes[idx][1]);
+            close(pipes[idx][1]); // parent closes write end
             pids[idx] = pid;
             idx++;
         }
@@ -463,9 +451,6 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
             idx++;
         }
     }
-    
-    printf("[INFO] All %d child processes completed. Received %d SIGUSR1 signals.\n", 
-           total_processes, (int)workers_completed);
     
     free(pids);
     free(pipes);
