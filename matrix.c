@@ -41,6 +41,34 @@ void print_matrix(Matrix *m) {
             printf("%8.2lf ", m->data[i][j]);
         printf("\n");
     }
+    void load_matrices_from_file(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        printf("Failed to open file: %s\n", filename);
+        return;
+    }
+
+    while (!feof(fp)) {
+        char name[50];
+        int rows, cols;
+        if (fscanf(fp, "%s %d %d", name, &rows, &cols) != 3) break;
+
+        Matrix *m = create_matrix(rows, cols, name);
+        for (int i = 0; i < rows; i++)
+            for (int j = 0; j < cols; j++)
+                fscanf(fp, "%lf", &m->data[i][j]);
+
+        if (matrix_count < MAX_MATRICES)
+            matrices[matrix_count++] = m;
+
+        // Skip empty line
+        int c;
+        while ((c = fgetc(fp)) != EOF && c != '\n');
+    }
+
+    fclose(fp);
+}
+
 }
 
 // ===== Menu Options =====
@@ -182,3 +210,4 @@ double get_time_ms() {
     gettimeofday(&tv, NULL);
     return (tv.tv_sec * 1000.0) + (tv.tv_usec / 1000.0);
 }
+
