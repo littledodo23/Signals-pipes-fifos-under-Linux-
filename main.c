@@ -309,15 +309,16 @@ int main(int argc, char *argv[]) {
             case 12: multiply_matrices_menu(); break;
             case 13: determinant_menu(); break;
             case 14: eigenvalues_menu(); break;
-            case 15:
-                printf("\nCleaning up worker pool...\n");
-                cleanup_worker_pool();
-                printf("Freeing matrices...\n");
-                for (int i = 0; i < matrix_count; i++) {
-                    free_matrix(matrices[i]);
-                }
-                printf("Goodbye!\n");
-                exit(0);
+           case 15:
+    printf("\nCleaning up worker pool...\n");
+    cleanup_worker_pool();
+    printf("Freeing matrices...\n");
+    for (int i = 0; i < matrix_count; i++) {
+        free_matrix(matrices[i]);
+    }
+    printf("Goodbye!\n");
+    exit(0);
+
             default:
                 printf("Invalid choice. Please try again.\n");
         }
