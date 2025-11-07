@@ -49,7 +49,7 @@ void setup_signal_handlers() {
     struct sigaction sa_chld;
     sa_chld.sa_handler = sigchld_handler;
     sigemptyset(&sa_chld.sa_mask);
-    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    sa_chld.sa_flags = SA_NOCLDSTOP;
     sigaction(SIGCHLD, &sa_chld, NULL);
     
     signal(SIGPIPE, SIG_IGN);
@@ -146,7 +146,7 @@ void init_status_fifo(void) {
         return;
     }
     
-    printf("[FIFO] ✅ Status FIFO created at: %s\n", STATUS_FIFO);
+    printf("[FIFO] Status FIFO created at: %s\n", STATUS_FIFO);
 }
 
 void send_status_via_fifo(const char *status_msg) {
@@ -184,7 +184,7 @@ void cleanup_status_fifo(void) {
         status_fifo_fd = -1;
     }
     unlink(STATUS_FIFO);
-    printf("[FIFO] ✅ Status FIFO cleaned up\n");
+    printf("[FIFO] Status FIFO cleaned up\n");
 }
 
 void monitor_status_fifo_background(void) {
@@ -282,7 +282,7 @@ void release_worker(Worker *w) {
     }
 }
 
-void age_workers() {
+void age_workers(void) {
     time_t now = time(NULL);
     for (int i = 0; i < pool_size; i++) {
         if (worker_pool[i].alive && worker_pool[i].available) {
@@ -297,7 +297,7 @@ void age_workers() {
     }
 }
 
-void cleanup_worker_pool() {
+void cleanup_worker_pool(void) {
     if (!worker_pool) return;
     
     printf("[INFO] Cleaning up worker pool...\n");
@@ -324,137 +324,7 @@ void cleanup_worker_pool() {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
-// ===== ✅ ADDED: WORKER POOL VERSIONS =====
-Matrix* add_matrices_with_pool(Matrix *m1, Matrix *m2) {
-    if (m1->rows != m2->rows || m1->cols != m2->cols) {
-        printf("Error: Matrices must have same dimensions\n");
-        return NULL;
-    }
-    
-    char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_plus_%s_pool", m1->name, m2->name);
-    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
-    
-    send_status_via_fifo("ADD_POOL_START");
-    
-    for (int i = 0; i < m1->rows; i++) {
-        for (int j = 0; j < m1->cols; j++) {
-            Worker *w = get_available_worker();
-            if (!w) {
-                printf("Error: No available workers\n");
-                return result;
-            }
-            
-            WorkMessage msg = {
-                .op_type = OP_ADD,
-                .operand1 = m1->data[i][j],
-                .operand2 = m2->data[i][j]
-            };
-            
-            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
-            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
-            result->data[i][j] = msg.result;
-            
-            release_worker(w);
-        }
-    }
-    
-    send_status_via_fifo("ADD_POOL_COMPLETE");
-    return result;
-}
-
-// ===== ✅ ADDED: OPENMP VERSIONS =====
-Matrix* add_matrices_openmp(Matrix *m1, Matrix *m2) {
-    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
-    
-    char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_plus_%s_omp", m1->name, m2->name);
-    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
-    
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < m1->rows; i++) {
-        for (int j = 0; j < m1->cols; j++) {
-            result->data[i][j] = m1->data[i][j] + m2->data[i][j];
-        }
-    }
-    
-    return result;
-}
-
-Matrix* subtract_matrices_openmp(Matrix *m1, Matrix *m2) {
-    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
-    
-    char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_minus_%s_omp", m1->name, m2->name);
-    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
-    
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < m1->rows; i++) {
-        for (int j = 0; j < m1->cols; j++) {
-            result->data[i][j] = m1->data[i][j] - m2->data[i][j];
-        }
-    }
-    
-    return result;
-}
-
-Matrix* multiply_matrices_openmp(Matrix *m1, Matrix *m2) {
-    if (m1->cols != m2->rows) return NULL;
-    
-    char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_times_%s_omp", m1->name, m2->name);
-    Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
-    
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < m1->rows; i++) {
-        for (int j = 0; j < m2->cols; j++) {
-            result->data[i][j] = 0.0;
-            for (int k = 0; k < m1->cols; k++) {
-                result->data[i][j] += m1->data[i][k] * m2->data[k][j];
-            }
-        }
-    }
-    
-    return result;
-}
-
-double determinant_openmp_recursive(Matrix *m) {
-    if (m->rows != m->cols) return 0.0;
-    
-    int n = m->rows;
-    
-    if (n == 1) return m->data[0][0];
-    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
-    
-    double det = 0.0;
-    
-    #pragma omp parallel for reduction(+:det) if(n > 4)
-    for (int j = 0; j < n; j++) {
-        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
-        for (int i = 1; i < n; i++) {
-            int col_idx = 0;
-            for (int k = 0; k < n; k++) {
-                if (k != j) sub->data[i-1][col_idx++] = m->data[i][k];
-            }
-        }
-        double sign = (j % 2 == 0) ? 1.0 : -1.0;
-        det += sign * m->data[0][j] * determinant_openmp_recursive(sub);
-        free_matrix(sub);
-    }
-    
-    return det;
-}
-
-double determinant_openmp(Matrix *m) {
-    if (m->rows != m->cols) {
-        printf("Error: Matrix must be square\n");
-        return 0.0;
-    }
-    
-    return determinant_openmp_recursive(m);
-}
-
-// ===== FORK-BASED OPERATIONS (Original) =====
+// ===== MATRIX OPERATIONS =====
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
         printf("Error: Matrices must have same dimensions\n");
@@ -860,7 +730,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     free(v_new);
 }
 
-// ===== SINGLE-THREADED VERSIONS =====
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
     
