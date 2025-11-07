@@ -914,8 +914,88 @@ double determinant_openmp(Matrix *m) {
         printf("Error: Matrix must be square\n");
         return 0.0;
     }
-    
+
     int n = m->rows;
-    
     if (n == 1) return m->data[0][0];
-    if (n == 2) return m->data[0][0]
+    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+
+    double det = 0.0;
+
+    #pragma omp parallel for reduction(+:det)
+    for (int j = 0; j < n; j++) {
+        Matrix *sub = create_matrix(n - 1, n - 1, "submatrix");
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) {
+                    sub->data[i - 1][col_idx++] = m->data[i][k];
+                }
+            }
+        }
+
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        double sub_det = determinant_openmp(sub);
+        det += sign * m->data[0][j] * sub_det;
+
+        free_matrix(sub);
+    }
+
+    return det;
+}
+
+void compute_eigen_openmp(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors) {
+    (void)num_eigenvalues;
+
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square for eigenvalue computation\n");
+        return;
+    }
+
+    int n = m->rows;
+    double *v = malloc(n * sizeof(double));
+    double *v_new = malloc(n * sizeof(double));
+
+    for (int i = 0; i < n; i++) v[i] = 1.0;
+
+    double norm = 0.0;
+    for (int i = 0; i < n; i++) norm += v[i] * v[i];
+    norm = sqrt(norm);
+    for (int i = 0; i < n; i++) v[i] /= norm;
+
+    int max_iterations = 1000;
+    double tolerance = 1e-6;
+
+    for (int iter = 0; iter < max_iterations; iter++) {
+        #pragma omp parallel for
+        for (int i = 0; i < n; i++) {
+            double sum = 0.0;
+            for (int j = 0; j < n; j++) {
+                sum += m->data[i][j] * v[j];
+            }
+            v_new[i] = sum;
+        }
+
+        double lambda = 0.0;
+        for (int i = 0; i < n; i++) lambda += v_new[i] * v[i];
+
+        norm = 0.0;
+        for (int i = 0; i < n; i++) norm += v_new[i] * v_new[i];
+        norm = sqrt(norm);
+
+        for (int i = 0; i < n; i++) v_new[i] /= norm;
+
+        double diff = 0.0;
+        for (int i = 0; i < n; i++) diff += fabs(v_new[i] - v[i]);
+
+        if (diff < tolerance) {
+            eigenvalues[0] = lambda;
+            for (int i = 0; i < n; i++) eigenvectors[0][i] = v_new[i];
+            break;
+        }
+
+        for (int i = 0; i < n; i++) v[i] = v_new[i];
+    }
+
+    free(v);
+    free(v_new);
+}
