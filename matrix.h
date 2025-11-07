@@ -24,6 +24,7 @@ Matrix *read_matrix_from_file(const char *filename);
 void save_matrix_to_file(Matrix *m, const char *filename);
 void read_matrices_from_folder(const char *foldername);
 void save_all_matrices_to_folder(const char *foldername);
+void load_matrices_from_file(const char *filename);
 
 // ===== Menu Operations (1–9) =====
 void enter_matrix();
