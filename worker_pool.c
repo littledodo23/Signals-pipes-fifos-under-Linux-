@@ -51,12 +51,6 @@ void setup_signal_handlers() {
     signal(SIGPIPE, SIG_IGN);
 }
 
-// ===== Timing Functions =====
-double get_time_ms() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec * 1000.0) + (tv.tv_usec / 1000.0);
-}
 
 // ===== Helper Functions =====
 double vector_norm(double *v, int n) {
@@ -748,41 +742,3 @@ double determinant_single(Matrix *m) {
     return det;
 }
 
-void compute_eigen_single(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors) {
-    if (m->rows != m->cols) return;
-    
-    int n = m->rows;
-    double *v = malloc(n * sizeof(double));
-    double *v_new = malloc(n * sizeof(double));
-    
-    for (int i = 0; i < n; i++) v[i] = 1.0;
-    normalize_vector(v, n);
-    
-    for (int iter = 0; iter < 1000; iter++) {
-        for (int i = 0; i < n; i++) {
-            v_new[i] = 0.0;
-            for (int j = 0; j < n; j++) {
-                v_new[i] += m->data[i][j] * v[j];
-            }
-        }
-        
-        double lambda = 0.0;
-        for (int i = 0; i < n; i++) lambda += v_new[i] * v[i];
-        
-        normalize_vector(v_new, n);
-        
-        double diff = 0.0;
-        for (int i = 0; i < n; i++) diff += fabs(v_new[i] - v[i]);
-        
-        if (diff < 1e-6) {
-            eigenvalues[0] = lambda;
-            for (int i = 0; i < n; i++) eigenvectors[0][i] = v_new[i];
-            break;
-        }
-        
-        for (int i = 0; i < n; i++) v[i] = v_new[i];
-    }
-    
-    free(v);
-    free(v_new);
-}
