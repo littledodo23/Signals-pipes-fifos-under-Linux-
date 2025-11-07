@@ -651,70 +651,7 @@ double determinant_single(Matrix *m) {
         free_matrix(sub);
     }
     return det;
-} * m->data[1][1] - m->data[0][1] * m->data[1][0];
-    
-    int num_processes = n;
-    pid_t *pids = malloc(num_processes * sizeof(pid_t));
-    int (*pipes)[2] = malloc(num_processes * sizeof(int[2]));
-    
-    workers_completed = 0;
-    
-    for (int j = 0; j < n; j++) {
-        if (pipe(pipes[j]) == -1) {
-            perror("pipe");
-            exit(1);
-        }
-        
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("fork");
-            exit(1);
-        }
-        
-        if (pid == 0) {
-            close(pipes[j][0]);
-            
-            Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
-            for (int i = 1; i < n; i++) {
-                int col_idx = 0;
-                for (int k = 0; k < n; k++) {
-                    if (k != j) {
-                        sub->data[i-1][col_idx++] = m->data[i][k];
-                    }
-                }
-            }
-            
-            double sub_det = determinant_recursive_processes(sub);
-            double sign = (j % 2 == 0) ? 1.0 : -1.0;
-            double cofactor = sign * m->data[0][j] * sub_det;
-            
-            write(pipes[j][1], &cofactor, sizeof(double));
-            close(pipes[j][1]);
-            
-            free_matrix(sub);
-            kill(getppid(), SIGUSR1);
-            exit(0);
-        }
-        
-        close(pipes[j][1]);
-        pids[j] = pid;
-    }
-    
-    double det = 0.0;
-    for (int j = 0; j < n; j++) {
-        double cofactor;
-        read(pipes[j][0], &cofactor, sizeof(double));
-        det += cofactor;
-        close(pipes[j][0]);
-        waitpid(pids[j], NULL, 0);
-    }
-    
-    free(pids);
-    free(pipes);
-    
-    return det;
 }
-
 double determinant_with_processes(Matrix *m) {
     if (m->rows != m->cols) {
         printf("Error: Matrix must be square\n");
