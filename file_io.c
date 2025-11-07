@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include "matrix.h"
+#include "file_io.h"
 
 #ifdef _WIN32
 #include <direct.h>  // for _mkdir, _getcwd
