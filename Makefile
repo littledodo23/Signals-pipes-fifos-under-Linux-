@@ -5,7 +5,7 @@
 
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g -fopenmp -std=c11
+CFLAGS = -Wall -Wextra -g -fopenmp -std=gnu11
 LDFLAGS = -lm -fopenmp
 
 # Target executable
