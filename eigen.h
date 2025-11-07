@@ -2,6 +2,7 @@
 #define EIGEN_H
 
 #include "matrix.h"
+#include "worker_pool.h"
 
 // ===== Eigen Result Structure =====
 typedef struct {
