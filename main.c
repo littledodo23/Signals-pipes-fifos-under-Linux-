@@ -62,7 +62,6 @@ void show_menu() {
             }
         }
     } else {
-        // Default menu
         printf("1.  Enter a matrix\n");
         printf("2.  Display a matrix\n");
         printf("3.  Delete a matrix\n");
@@ -111,33 +110,64 @@ void add_matrices_menu() {
         return;
     }
 
-    printf("\n=== ADDITION OPERATION ===\n");
-    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
+    printf("\n=== ADDITION OPERATION - 3-WAY COMPARISON ===\n");
+    
+    // Method 1: Worker Pool (Reusing persistent processes)
+    printf("\n[1] Using WORKER POOL (persistent processes)...\n");
+    double start_pool = get_time_ms();
+    Matrix *result_pool = add_matrices_with_pool(m1, m2);
+    double time_pool = get_time_ms() - start_pool;
 
-    double start_ipc = get_time_ms();
-    Matrix *result_ipc = add_matrices_with_processes(m1, m2);
-    double time_ipc = get_time_ms() - start_ipc;
+    // Method 2: Fork-based (creating new processes)
+    printf("\n[2] Using FORK (new processes per element)...\n");
+    double start_fork = get_time_ms();
+    Matrix *result_fork = add_matrices_with_processes(m1, m2);
+    double time_fork = get_time_ms() - start_fork;
+    
+    // Method 3: OpenMP (threading)
+    printf("\n[3] Using OpenMP (threading)...\n");
+    double start_omp = get_time_ms();
+    Matrix *result_omp = add_matrices_openmp(m1, m2);
+    double time_omp = get_time_ms() - start_omp;
 
+    // Method 4: Single-threaded
+    printf("\n[4] Using Single-threaded...\n");
     double start_single = get_time_ms();
     Matrix *result_single = add_matrices_single(m1, m2);
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:              %.2f ms\n", time_single);
-    if (time_ipc > 0) {
-        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
+    printf("Worker Pool time:     %.2f ms  (Speedup: %.2fx)\n", time_pool, time_single / time_pool);
+    printf("Fork-based time:      %.2f ms  (Speedup: %.2fx)\n", time_fork, time_single / time_fork);
+    printf("OpenMP time:          %.2f ms  (Speedup: %.2fx)\n", time_omp, time_single / time_omp);
+    printf("Single-threaded time: %.2f ms  (Baseline)\n", time_single);
+    
+    printf("\n=== WINNER ===\n");
+    double best_time = time_pool;
+    const char *best_method = "Worker Pool";
+    
+    if (time_fork < best_time) {
+        best_time = time_fork;
+        best_method = "Fork-based";
     }
+    if (time_omp < best_time) {
+        best_time = time_omp;
+        best_method = "OpenMP";
+    }
+    
+    printf("Fastest method: %s (%.2f ms)\n", best_method, best_time);
 
-    if (result_ipc) {
+    if (result_pool) {
         printf("\nResult:\n");
-        print_matrix(result_ipc);
+        print_matrix(result_pool);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_ipc;
-            printf("Result saved to memory as '%s'.\n", result_ipc->name);
+            matrices[matrix_count++] = result_pool;
+            printf("Result saved to memory as '%s'.\n", result_pool->name);
         }
     }
 
+    if (result_fork) free_matrix(result_fork);
+    if (result_omp) free_matrix(result_omp);
     if (result_single) free_matrix(result_single);
 }
 
@@ -153,33 +183,41 @@ void subtract_matrices_menu() {
         return;
     }
 
-    printf("\n=== SUBTRACTION OPERATION ===\n");
-    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
+    printf("\n=== SUBTRACTION OPERATION - 3-WAY COMPARISON ===\n");
 
-    double start_ipc = get_time_ms();
-    Matrix *result_ipc = subtract_matrices_with_processes(m1, m2);
-    double time_ipc = get_time_ms() - start_ipc;
+    // Fork-based
+    printf("\n[1] Using FORK (new processes)...\n");
+    double start_fork = get_time_ms();
+    Matrix *result_fork = subtract_matrices_with_processes(m1, m2);
+    double time_fork = get_time_ms() - start_fork;
+    
+    // OpenMP
+    printf("\n[2] Using OpenMP...\n");
+    double start_omp = get_time_ms();
+    Matrix *result_omp = subtract_matrices_openmp(m1, m2);
+    double time_omp = get_time_ms() - start_omp;
 
+    // Single-threaded
+    printf("\n[3] Using Single-threaded...\n");
     double start_single = get_time_ms();
     Matrix *result_single = subtract_matrices_single(m1, m2);
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:              %.2f ms\n", time_single);
-    if (time_ipc > 0) {
-        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
-    }
+    printf("Fork-based time:      %.2f ms  (Speedup: %.2fx)\n", time_fork, time_single / time_fork);
+    printf("OpenMP time:          %.2f ms  (Speedup: %.2fx)\n", time_omp, time_single / time_omp);
+    printf("Single-threaded time: %.2f ms  (Baseline)\n", time_single);
 
-    if (result_ipc) {
+    if (result_fork) {
         printf("\nResult:\n");
-        print_matrix(result_ipc);
+        print_matrix(result_fork);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_ipc;
-            printf("Result saved to memory as '%s'.\n", result_ipc->name);
+            matrices[matrix_count++] = result_fork;
+            printf("Result saved to memory as '%s'.\n", result_fork->name);
         }
     }
 
+    if (result_omp) free_matrix(result_omp);
     if (result_single) free_matrix(result_single);
 }
 
@@ -200,33 +238,41 @@ void multiply_matrices_menu() {
         return;
     }
 
-    printf("\n=== MULTIPLICATION OPERATION ===\n");
-    printf("Using multi-processing with worker pool (signals + pipes)...\n\n");
+    printf("\n=== MULTIPLICATION OPERATION - 3-WAY COMPARISON ===\n");
 
-    double start_ipc = get_time_ms();
-    Matrix *result_ipc = multiply_matrices_with_processes(m1, m2);
-    double time_ipc = get_time_ms() - start_ipc;
+    // Fork-based
+    printf("\n[1] Using FORK (new processes)...\n");
+    double start_fork = get_time_ms();
+    Matrix *result_fork = multiply_matrices_with_processes(m1, m2);
+    double time_fork = get_time_ms() - start_fork;
+    
+    // OpenMP
+    printf("\n[2] Using OpenMP...\n");
+    double start_omp = get_time_ms();
+    Matrix *result_omp = multiply_matrices_openmp(m1, m2);
+    double time_omp = get_time_ms() - start_omp;
 
+    // Single-threaded
+    printf("\n[3] Using Single-threaded...\n");
     double start_single = get_time_ms();
     Matrix *result_single = multiply_matrices_single(m1, m2);
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process (Worker Pool) time: %.2f ms\n", time_ipc);
-    printf("Single-threaded time:              %.2f ms\n", time_single);
-    if (time_ipc > 0) {
-        printf("Speedup factor:                    %.2fx\n", time_single / time_ipc);
-    }
+    printf("Fork-based time:      %.2f ms  (Speedup: %.2fx)\n", time_fork, time_single / time_fork);
+    printf("OpenMP time:          %.2f ms  (Speedup: %.2fx)\n", time_omp, time_single / time_omp);
+    printf("Single-threaded time: %.2f ms  (Baseline)\n", time_single);
 
-    if (result_ipc) {
+    if (result_fork) {
         printf("\nResult:\n");
-        print_matrix(result_ipc);
+        print_matrix(result_fork);
         if (matrix_count < MAX_MATRICES) {
-            matrices[matrix_count++] = result_ipc;
-            printf("Result saved to memory as '%s'.\n", result_ipc->name);
+            matrices[matrix_count++] = result_fork;
+            printf("Result saved to memory as '%s'.\n", result_fork->name);
         }
     }
 
+    if (result_omp) free_matrix(result_omp);
     if (result_single) free_matrix(result_single);
 }
 
@@ -239,33 +285,45 @@ void determinant_menu() {
         return;
     }
 
-    printf("\n=== DETERMINANT CALCULATION ===\n");
+    printf("\n=== DETERMINANT CALCULATION - 3-WAY COMPARISON ===\n");
     printf("Matrix: %s (%dx%d)\n\n", m->name, m->rows, m->cols);
 
-    double start_parallel = get_time_ms();
-    double det_parallel = determinant_parallel(m);
-    double time_parallel = get_time_ms() - start_parallel;
+    // Multi-process
+    printf("[1] Using Multi-processing (fork)...\n");
+    double start_mp = get_time_ms();
+    double det_mp = determinant_parallel(m);
+    double time_mp = get_time_ms() - start_mp;
 
+    // OpenMP
+    printf("[2] Using OpenMP...\n");
+    double start_omp = get_time_ms();
+    double det_omp = determinant_openmp(m);
+    double time_omp = get_time_ms() - start_omp;
+
+    // Single-threaded
+    printf("[3] Using Single-threaded...\n");
     double start_single = get_time_ms();
     double det_single = determinant_single(m);
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Parallel (Worker Pool) time: %.2f ms\n", time_parallel);
-    printf("Single-threaded time:         %.2f ms\n", time_single);
+    printf("Multi-process time:   %.2f ms  (Speedup: %.2fx)\n", time_mp, time_single / time_mp);
+    printf("OpenMP time:          %.2f ms  (Speedup: %.2fx)\n", time_omp, time_single / time_omp);
+    printf("Single-threaded time: %.2f ms  (Baseline)\n", time_single);
     
-    // Verify results match
-    if (fabs(det_parallel - det_single) < 1e-6) {
-        printf("Results match: both methods computed determinant = %.6f\n", det_parallel);
+    printf("\n=== VERIFICATION ===\n");
+    printf("Multi-process result: %.6f\n", det_mp);
+    printf("OpenMP result:        %.6f\n", det_omp);
+    printf("Single-thread result: %.6f\n", det_single);
+    
+    if (fabs(det_mp - det_single) < 1e-6 && fabs(det_omp - det_single) < 1e-6) {
+        printf("✅ All methods agree!\n");
     } else {
-        printf("Warning: Results differ! Parallel = %.6f, Single = %.6f\n", det_parallel, det_single);
-    }
-    if (time_parallel > 0) {
-        printf("Speedup factor:               %.2fx\n", time_single / time_parallel);
+        printf("⚠️  Warning: Results differ!\n");
     }
 
-    printf("\n=== RESULTS ===\n");
-    printf("Determinant: %.6f\n", det_parallel);
+    printf("\n=== FINAL RESULT ===\n");
+    printf("Determinant: %.6f\n", det_mp);
 }
 
 void eigenvalues_menu() {
@@ -283,42 +341,38 @@ void eigenvalues_menu() {
     int num_eigen = get_int_input("How many eigenvalues to compute? (1 to %d): ", 
                                    1, m->rows);
 
-    // ✅ FIXED: Now using MULTI-PROCESSING version
-    printf("\n[INFO] Using MULTI-PROCESSING (fork + pipes + signals)...\n");
-    
+    printf("\n=== 3-WAY COMPARISON ===\n");
+
+    // Multi-processing
+    printf("\n[1] Using Multi-processing (fork + pipes)...\n");
     double *eigenvalues_mp = malloc(num_eigen * sizeof(double));
     double **eigenvectors_mp = malloc(num_eigen * sizeof(double*));
     for (int i = 0; i < num_eigen; i++) {
         eigenvectors_mp[i] = malloc(m->rows * sizeof(double));
     }
     
-    send_status_via_fifo("EIGEN_COMPUTATION_START"); // ✅ NEW: FIFO status
-    
+    send_status_via_fifo("EIGEN_MP_START");
     double start_mp = get_time_ms();
     compute_eigen_with_processes(m, num_eigen, eigenvalues_mp, eigenvectors_mp);
     double time_mp = get_time_ms() - start_mp;
-    
-    send_status_via_fifo("EIGEN_COMPUTATION_COMPLETE"); // ✅ NEW: FIFO status
+    send_status_via_fifo("EIGEN_MP_COMPLETE");
 
-    // Compare with OpenMP version
+    // OpenMP
+    printf("\n[2] Using OpenMP (threading)...\n");
     double start_omp = get_time_ms();
     EigenResult *result_omp = compute_eigen_parallel(m, num_eigen);
     double time_omp = get_time_ms() - start_omp;
 
-    // Compare with single-threaded
+    // Single-threaded
+    printf("\n[3] Using Single-threaded...\n");
     double start_single = get_time_ms();
     EigenResult *result_single = compute_eigen_single(m, num_eigen);
     double time_single = get_time_ms() - start_single;
 
     printf("\n=== PERFORMANCE COMPARISON ===\n");
-    printf("Multi-process time:   %.2f ms\n", time_mp);
-    printf("OpenMP time:          %.2f ms\n", time_omp);
-    printf("Single-threaded time: %.2f ms\n", time_single);
-    
-    if (time_mp > 0) {
-        printf("Speedup (MP vs Single):  %.2fx\n", time_single / time_mp);
-        printf("Speedup (OMP vs Single): %.2fx\n", time_single / time_omp);
-    }
+    printf("Multi-process time:   %.2f ms  (Speedup: %.2fx)\n", time_mp, time_single / time_mp);
+    printf("OpenMP time:          %.2f ms  (Speedup: %.2fx)\n", time_omp, time_single / time_omp);
+    printf("Single-threaded time: %.2f ms  (Baseline)\n", time_single);
 
     printf("\n=== RESULTS (Multi-Processing) ===\n");
     for (int i = 0; i < num_eigen; i++) {
@@ -339,8 +393,6 @@ void eigenvalues_menu() {
                 if (j < m->rows - 1) printf(", ");
             }
             printf("]\n");
-        } else {
-            printf("Eigenvector %d: [Not computed]\n", i + 1);
         }
     }
 
@@ -353,17 +405,16 @@ void eigenvalues_menu() {
     
     if (result_omp) free_eigen_result(result_omp);
     if (result_single) free_eigen_result(result_single);
-
-    printf("\nNote: The dominant eigenvalue has a computed eigenvector.\n");
 }
+
 int main(int argc, char *argv[]) {
     printf("===========================================\n");
     printf(" Matrix Operations with Multi-Processing\n");
     printf(" Real-Time & Embedded Systems Project\n");
+    printf(" ✅ OPTIMIZED VERSION WITH 3-WAY COMPARISON\n");
     printf("===========================================\n\n");
 
-    // Load configuration file
-   const char *config_file = (argc > 1) ? argv[1] : "matrix_config.txt";
+    const char *config_file = (argc > 1) ? argv[1] : "matrix_config.txt";
     init_default_config();
     load_config(config_file);
     
@@ -371,18 +422,14 @@ int main(int argc, char *argv[]) {
 
     setup_signal_handlers();
 
-
-    // Initialize worker pool with configured size
     printf("\nInitializing system with %d workers...\n", cfg->worker_pool_size);
     init_worker_pool(cfg->worker_pool_size);
     max_idle_time = cfg->max_idle_time;
 
-    // ✅ NEW: Auto-load matrices from configured directory
     if (strlen(cfg->matrix_directory) > 0) {
         printf("\n[AUTO-LOAD] Loading matrices from: %s\n", cfg->matrix_directory);
         read_matrices_from_folder(cfg->matrix_directory);
     } else {
-        // Fallback to command-line argument or default file
         const char *mat_file = (argc > 2) ? argv[2] : "matrix.txt";
         printf("\n[AUTO-LOAD] Loading matrices from file: %s\n", mat_file);
         load_matrices_from_file(mat_file);
@@ -408,15 +455,15 @@ int main(int argc, char *argv[]) {
             case 12: multiply_matrices_menu(); break;
             case 13: determinant_menu(); break;
             case 14: eigenvalues_menu(); break;
-           case 15:
-    printf("\nCleaning up worker pool...\n");
-    cleanup_worker_pool();
-    printf("Freeing matrices...\n");
-    for (int i = 0; i < matrix_count; i++) {
-        free_matrix(matrices[i]);
-    }
-    printf("Goodbye!\n");
-    exit(0);
+            case 15:
+                printf("\nCleaning up worker pool...\n");
+                cleanup_worker_pool();
+                printf("Freeing matrices...\n");
+                for (int i = 0; i < matrix_count; i++) {
+                    free_matrix(matrices[i]);
+                }
+                printf("Goodbye!\n");
+                exit(0);
 
             default:
                 printf("Invalid choice. Please try again.\n");
