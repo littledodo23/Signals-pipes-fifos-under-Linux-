@@ -41,7 +41,7 @@ typedef struct {
     double vector_data[MAX_VECTOR_SIZE];
 } WorkMessage;
 
-// ✅ NEW: FIFO Status Message
+// ✅ FIFO Status Message
 typedef struct {
     char status[64];
     int worker_count;
@@ -55,36 +55,46 @@ extern Worker *worker_pool;
 extern int pool_size;
 extern int max_idle_time;
 
-// ===== Functions =====
+// ===== Worker Pool Management =====
 void init_worker_pool(int size);
 void cleanup_worker_pool(void);
 Worker* get_available_worker(void);
 void release_worker(Worker *w);
 void age_workers(void);
-
 void worker_process_loop(int input_fd, int output_fd);
 
-// Matrix operations using multiprocessing
+// ===== Matrix Operations - Fork-based (New Processes) =====
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2);
 double determinant_with_processes(Matrix *m);
 
-// Single-threaded versions
+// ===== ✅ ADDED: Matrix Operations - Worker Pool (Persistent Processes) =====
+Matrix* add_matrices_with_pool(Matrix *m1, Matrix *m2);
+
+// ===== ✅ ADDED: Matrix Operations - OpenMP (Threading) =====
+Matrix* add_matrices_openmp(Matrix *m1, Matrix *m2);
+Matrix* subtract_matrices_openmp(Matrix *m1, Matrix *m2);
+Matrix* multiply_matrices_openmp(Matrix *m1, Matrix *m2);
+double determinant_openmp(Matrix *m);
+
+// ===== Single-threaded Versions (Baseline) =====
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2);
 double determinant_single(Matrix *m);
 
-// Timing + signal handlers
+// ===== Eigenvalue Computation =====
+void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
+
+// ===== Helper Functions =====
+double determinant_parallel(Matrix *m);
 double get_time_ms(void);
 void setup_signal_handlers(void);
 void sigusr1_handler(int signo);
 void sigchld_handler(int signo);
 
-void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
-
-// ✅ NEW: FIFO Functions
+// ===== FIFO Functions =====
 void init_status_fifo(void);
 void send_status_via_fifo(const char *status_msg);
 void cleanup_status_fifo(void);
