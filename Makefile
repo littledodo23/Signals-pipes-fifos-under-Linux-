@@ -1,116 +1,89 @@
-# Makefile for Matrix Operations with Multi-Processing
-# Author: Project 1 - Signals, Pipes, and FIFOs under Linux
+# Makefile for Matrix Operations Project
+# Real-Time & Embedded Systems - Birzeit University
 
-# Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g -fopenmp
-LDFLAGS = -lm
-
-# Directories
-BUILD_DIR = build
-SRC_DIR = .
-
-# Target executable
-TARGET = matrix_ops
+CFLAGS = -Wall -Wextra -O2 -fopenmp -g
+LDFLAGS = -lm -fopenmp
 
 # Source files
-SRCS = main.c eigen.c worker_pool.c matrix.c file_io.c config.c
+SRCS = main.c matrix.c worker_pool.c eigen.c file_io.c config.c
+OBJS = $(SRCS:.c=.o)
+TARGET = matrix_ops
 
-# Object files (placed in build directory)
-OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
-
-# Header files (for dependency tracking)
-HEADERS = matrix.h worker_pool.h eigen.h config.h file_io.h
-
-# Default target - build the executable
+# Build target
 all: $(TARGET)
+	@echo "✅ Build complete!"
+	@echo "Run with: ./$(TARGET) [config_file] [matrix_file]"
 
-# Link object files to create the executable
 $(TARGET): $(OBJS)
-	@echo "Linking $(TARGET)..."
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
-	@echo "Build successful! Executable: $(TARGET)"
+	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
 
-# Compile each .c file to .o file in build directory
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(BUILD_DIR)
-	@echo "Compiling $<..."
+# Compile object files
+%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Create build directory if it doesn't exist
-$(BUILD_DIR):
-	@echo "Creating build directory..."
-	@mkdir -p $(BUILD_DIR)
+# Dependencies
+main.o: main.c matrix.h worker_pool.h eigen.h config.h file_io.h
+matrix.o: matrix.c matrix.h
+worker_pool.o: worker_pool.c worker_pool.h matrix.h
+eigen.o: eigen.c eigen.h matrix.h
+file_io.o: file_io.c file_io.h matrix.h
+config.o: config.c config.h
+
+# Debug build
+debug: CFLAGS += -DDEBUG -g3
+debug: clean all
 
 # Clean build artifacts
 clean:
-	@echo "Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR) $(TARGET)
-	@echo "Clean complete!"
+	rm -f $(OBJS) $(TARGET)
+	rm -f /tmp/matrix_status_fifo
+	@echo "✅ Cleaned build artifacts"
 
-# Clean and rebuild
-rebuild: clean all
-
-# Run the program
+# Run with default config
 run: $(TARGET)
-	@echo "Running $(TARGET)..."
-	./$(TARGET)
+	./$(TARGET) matrix_config.txt
 
-# Run with custom config file
-run-config: $(TARGET)
-	@echo "Running $(TARGET) with custom config..."
-	./$(TARGET) config.txt
-
-# Run with custom matrix file
-run-matrix: $(TARGET)
-	./$(TARGET) config.txt matrix.txt
-
-# Check for memory leaks with valgrind
+# Run with valgrind memory check
 valgrind: $(TARGET)
-	@echo "Running valgrind memory check..."
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TARGET)
 
-# Debug with gdb
-debug: $(TARGET)
-	@echo "Starting gdb debugger..."
-	gdb ./$(TARGET)
+# Create sample config file
+config:
+	@echo "4 60" > matrix_config.txt
+	@echo "matrices" >> matrix_config.txt
+	@echo "✅ Created matrix_config.txt"
 
-# Install (copy to /usr/local/bin - requires sudo)
-install: $(TARGET)
-	@echo "Installing $(TARGET) to /usr/local/bin..."
-	sudo cp $(TARGET) /usr/local/bin/
-	@echo "Installation complete!"
+# Create sample matrices folder
+matrices:
+	mkdir -p matrices
+	@echo "A 3 3" > matrices/A.txt
+	@echo "1.0 2.0 3.0" >> matrices/A.txt
+	@echo "4.0 5.0 6.0" >> matrices/A.txt
+	@echo "7.0 8.0 9.0" >> matrices/A.txt
+	@echo "B 3 3" > matrices/B.txt
+	@echo "9.0 8.0 7.0" >> matrices/B.txt
+	@echo "6.0 5.0 4.0" >> matrices/B.txt
+	@echo "3.0 2.0 1.0" >> matrices/B.txt
+	@echo "✅ Created sample matrices in matrices/"
 
-# Uninstall
-uninstall:
-	@echo "Uninstalling $(TARGET)..."
-	sudo rm -f /usr/local/bin/$(TARGET)
-	@echo "Uninstall complete!"
-
-# Show build info
-info:
-	@echo "Build Information:"
-	@echo "  Compiler: $(CC)"
-	@echo "  Flags: $(CFLAGS)"
-	@echo "  Target: $(TARGET)"
-	@echo "  Build Dir: $(BUILD_DIR)"
-	@echo "  Sources: $(SRCS)"
-	@echo "  Objects: $(OBJS)"
+# Setup everything
+setup: config matrices
+	@echo "✅ Setup complete! Ready to compile and run."
 
 # Help target
 help:
-	@echo "Available targets:"
-	@echo "  all         - Build the executable (default)"
-	@echo "  clean       - Remove build artifacts"
-	@echo "  rebuild     - Clean and rebuild"
-	@echo "  run         - Build and run the program"
-	@echo "  run-config  - Run with config file"
-	@echo "  run-matrix  - Run with config and matrix file"
-	@echo "  valgrind    - Run with valgrind memory checker"
-	@echo "  debug       - Run with gdb debugger"
-	@echo "  install     - Install to system (requires sudo)"
-	@echo "  uninstall   - Remove from system (requires sudo)"
-	@echo "  info        - Show build configuration"
-	@echo "  help        - Show this help message"
+	@echo "Matrix Operations Project - Makefile"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all       - Build the project (default)"
+	@echo "  debug     - Build with debug symbols"
+	@echo "  clean     - Remove build artifacts"
+	@echo "  run       - Build and run with default config"
+	@echo "  valgrind  - Run with memory leak detection"
+	@echo "  config    - Create sample config file"
+	@echo "  matrices  - Create sample matrices folder"
+	@echo "  setup     - Create config and sample matrices"
+	@echo "  help      - Show this help message"
 
-# Phony targets (not actual files)
-.PHONY: all clean rebuild run run-config run-matrix valgrind debug install uninstall info help
+.PHONY: all debug clean run valgrind config matrices setup help
