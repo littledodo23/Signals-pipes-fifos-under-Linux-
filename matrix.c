@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "matrix.h"
-#include <sys/time.h>
 
 // ===== Global Variables =====
 Matrix *matrices[MAX_MATRICES];
@@ -204,10 +203,3 @@ void display_all_matrices() {
     for (int i = 0; i < matrix_count; i++)
         print_matrix(matrices[i]);
 }
-
-double get_time_ms() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec * 1000.0) + (tv.tv_usec / 1000.0);
-}
-
