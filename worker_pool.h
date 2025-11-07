@@ -74,4 +74,6 @@ void setup_signal_handlers(void);
 void sigusr1_handler(int signo);
 void sigchld_handler(int signo);
 
+void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
+
 #endif
