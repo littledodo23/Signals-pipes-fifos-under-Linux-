@@ -18,7 +18,6 @@
 // ===== Global Variables =====
 Worker *worker_pool = NULL;
 int pool_size = 0;
-// ✅ NEW: FIFO for status reporting
 #define STATUS_FIFO "/tmp/matrix_status_fifo"
 static int status_fifo_fd = -1;
 static pid_t monitor_pid = -1;
@@ -36,7 +35,6 @@ void sigchld_handler(int signo) {
     int status;
     pid_t pid;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        // Child terminated - count it
         workers_completed++;
     }
 }
@@ -57,6 +55,11 @@ void setup_signal_handlers() {
     signal(SIGPIPE, SIG_IGN);
 }
 
+double get_time_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (tv.tv_sec * 1000.0) + (tv.tv_usec / 1000.0);
+}
 
 // ===== Helper Functions =====
 double vector_norm(double *v, int n) {
@@ -78,7 +81,7 @@ void normalize_vector(double *v, int n) {
     }
 }
 
-// ===== Worker Process Loop (for persistent pool - optional optimization) =====
+// ===== Worker Process Loop =====
 void worker_process_loop(int input_fd, int output_fd) {
     WorkMessage msg;
     
@@ -133,28 +136,23 @@ void worker_process_loop(int input_fd, int output_fd) {
     close(output_fd);
     exit(0);
 }
-// ===== ✅ NEW: FIFO IMPLEMENTATION (REQUIREMENT 5) =====
 
+// ===== FIFO IMPLEMENTATION =====
 void init_status_fifo(void) {
-    // Remove old FIFO if exists
     unlink(STATUS_FIFO);
     
-    // Create named pipe (FIFO)
     if (mkfifo(STATUS_FIFO, 0666) == -1) {
         perror("[FIFO] mkfifo failed");
         return;
     }
     
     printf("[FIFO] ✅ Status FIFO created at: %s\n", STATUS_FIFO);
-    printf("[FIFO] This demonstrates named pipes (FIFOs) for IPC\n");
 }
 
 void send_status_via_fifo(const char *status_msg) {
     if (status_fifo_fd == -1) {
-        // Open FIFO in non-blocking mode for writing
         status_fifo_fd = open(STATUS_FIFO, O_WRONLY | O_NONBLOCK);
         if (status_fifo_fd == -1) {
-            // No reader, that's okay
             return;
         }
     }
@@ -164,7 +162,6 @@ void send_status_via_fifo(const char *status_msg) {
     msg.status[sizeof(msg.status) - 1] = '\0';
     msg.worker_count = pool_size;
     
-    // Count active workers
     msg.active_workers = 0;
     for (int i = 0; i < pool_size; i++) {
         if (worker_pool && worker_pool[i].alive && !worker_pool[i].available) {
@@ -174,10 +171,8 @@ void send_status_via_fifo(const char *status_msg) {
     
     msg.timestamp = get_time_ms();
     
-    // Write to FIFO
     ssize_t written = write(status_fifo_fd, &msg, sizeof(StatusMessage));
     if (written == -1 && errno != EAGAIN) {
-        // Reader closed, reopen next time
         close(status_fifo_fd);
         status_fifo_fd = -1;
     }
@@ -192,12 +187,10 @@ void cleanup_status_fifo(void) {
     printf("[FIFO] ✅ Status FIFO cleaned up\n");
 }
 
-// Background monitor that reads from FIFO
 void monitor_status_fifo_background(void) {
     monitor_pid = fork();
     
     if (monitor_pid == 0) {
-        // Child process - monitors FIFO
         printf("[FIFO MONITOR] Started (PID: %d)\n", getpid());
         
         int fd = open(STATUS_FIFO, O_RDONLY);
@@ -215,7 +208,6 @@ void monitor_status_fifo_background(void) {
                 printf("  Workers: %d/%d active\n", msg.active_workers, msg.worker_count);
                 printf("  Timestamp: %.2f ms\n\n", msg.timestamp);
             } else if (n == 0) {
-                // Writer closed, wait for new writer
                 close(fd);
                 fd = open(STATUS_FIFO, O_RDONLY);
             }
@@ -225,17 +217,16 @@ void monitor_status_fifo_background(void) {
         exit(0);
     }
     
-    // Parent continues
-    usleep(100000); // Give monitor time to start
+    usleep(100000);
 }
-// ===== Worker Pool Management (OPTIONAL - for optimization) =====
+
+// ===== Worker Pool Management =====
 void init_worker_pool(int size) {
     pool_size = size;
     worker_pool = malloc(size * sizeof(Worker));
     
     printf("[INFO] Initializing worker pool with %d workers...\n", size);
     
-    // ✅ NEW: Initialize FIFO
     init_status_fifo();
     monitor_status_fifo_background();
     
@@ -270,9 +261,18 @@ void init_worker_pool(int size) {
     }
     
     printf("[INFO] Worker pool initialized successfully\n");
-    
-    // ✅ NEW: Send initial status via FIFO
     send_status_via_fifo("POOL_READY");
+}
+
+Worker* get_available_worker(void) {
+    for (int i = 0; i < pool_size; i++) {
+        if (worker_pool[i].alive && worker_pool[i].available) {
+            worker_pool[i].available = 0;
+            worker_pool[i].last_used = time(NULL);
+            return &worker_pool[i];
+        }
+    }
+    return NULL;
 }
 
 void release_worker(Worker *w) {
@@ -301,8 +301,6 @@ void cleanup_worker_pool() {
     if (!worker_pool) return;
     
     printf("[INFO] Cleaning up worker pool...\n");
-    
-    // ✅ NEW: Send cleanup status
     send_status_via_fifo("POOL_SHUTDOWN");
     
     for (int i = 0; i < pool_size; i++) {
@@ -315,7 +313,6 @@ void cleanup_worker_pool() {
         }
     }
     
-    // ✅ NEW: Cleanup FIFO and monitor
     if (monitor_pid > 0) {
         kill(monitor_pid, SIGTERM);
         waitpid(monitor_pid, NULL, 0);
@@ -327,7 +324,137 @@ void cleanup_worker_pool() {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
-// ===== REQUIREMENT 2: ADD MATRICES - ONE CHILD PER ELEMENT =====
+// ===== ✅ ADDED: WORKER POOL VERSIONS =====
+Matrix* add_matrices_with_pool(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_pool", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    send_status_via_fifo("ADD_POOL_START");
+    
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            Worker *w = get_available_worker();
+            if (!w) {
+                printf("Error: No available workers\n");
+                return result;
+            }
+            
+            WorkMessage msg = {
+                .op_type = OP_ADD,
+                .operand1 = m1->data[i][j],
+                .operand2 = m2->data[i][j]
+            };
+            
+            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+            result->data[i][j] = msg.result;
+            
+            release_worker(w);
+        }
+    }
+    
+    send_status_via_fifo("ADD_POOL_COMPLETE");
+    return result;
+}
+
+// ===== ✅ ADDED: OPENMP VERSIONS =====
+Matrix* add_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_omp", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            result->data[i][j] = m1->data[i][j] + m2->data[i][j];
+        }
+    }
+    
+    return result;
+}
+
+Matrix* subtract_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_minus_%s_omp", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            result->data[i][j] = m1->data[i][j] - m2->data[i][j];
+        }
+    }
+    
+    return result;
+}
+
+Matrix* multiply_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->cols != m2->rows) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_times_%s_omp", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
+    
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m2->cols; j++) {
+            result->data[i][j] = 0.0;
+            for (int k = 0; k < m1->cols; k++) {
+                result->data[i][j] += m1->data[i][k] * m2->data[k][j];
+            }
+        }
+    }
+    
+    return result;
+}
+
+double determinant_openmp_recursive(Matrix *m) {
+    if (m->rows != m->cols) return 0.0;
+    
+    int n = m->rows;
+    
+    if (n == 1) return m->data[0][0];
+    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    
+    double det = 0.0;
+    
+    #pragma omp parallel for reduction(+:det) if(n > 4)
+    for (int j = 0; j < n; j++) {
+        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) sub->data[i-1][col_idx++] = m->data[i][k];
+            }
+        }
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        det += sign * m->data[0][j] * determinant_openmp_recursive(sub);
+        free_matrix(sub);
+    }
+    
+    return det;
+}
+
+double determinant_openmp(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square\n");
+        return 0.0;
+    }
+    
+    return determinant_openmp_recursive(m);
+}
+
+// ===== FORK-BASED OPERATIONS (Original) =====
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
         printf("Error: Matrices must have same dimensions\n");
@@ -340,15 +467,13 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     
     int total_elements = m1->rows * m1->cols;
     printf("[INFO] Creating %d child processes (ONE per element) using fork()\n", total_elements);
-    printf("[INFO] Using PIPES for IPC and SIGNALS for synchronization\n");
     
     pid_t *pids = malloc(total_elements * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
     
     workers_completed = 0;
-      send_status_via_fifo("ADD_OPERATION_START"); // ✅ NEW
+    send_status_via_fifo("ADD_OPERATION_START");
     
-    // Create one child per element
     int idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
@@ -364,43 +489,30 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
             }
             
             if (pid == 0) {
-                // CHILD PROCESS
-                close(pipes[idx][0]); // Close read end
-                
-                // Compute addition
+                close(pipes[idx][0]);
                 double result_val = m1->data[i][j] + m2->data[i][j];
-                
-                // Send result through pipe
                 write(pipes[idx][1], &result_val, sizeof(double));
                 close(pipes[idx][1]);
-                
-                // Signal parent that work is done
                 kill(getppid(), SIGUSR1);
-                
                 exit(0);
             }
             
-            // PARENT PROCESS
-            close(pipes[idx][1]); // Close write end
+            close(pipes[idx][1]);
             pids[idx] = pid;
             idx++;
         }
     }
     
-    // Collect results from all children
     idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
             double result_val;
-            
-            // Read result from pipe
             ssize_t n = read(pipes[idx][0], &result_val, sizeof(double));
             if (n > 0) {
                 result->data[i][j] = result_val;
             }
-            
             close(pipes[idx][0]);
-            waitpid(pids[idx], NULL, 0); // Wait for child to terminate
+            waitpid(pids[idx], NULL, 0);
             idx++;
         }
     }
@@ -408,15 +520,13 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     printf("[INFO] All %d child processes completed. Received %d SIGUSR1 signals.\n", 
            total_elements, (int)workers_completed);
     
-   free(pids);
+    free(pids);
     free(pipes);
-    
-    send_status_via_fifo("ADD_OPERATION_COMPLETE"); // ✅ NEW
+    send_status_via_fifo("ADD_OPERATION_COMPLETE");
     
     return result;
 }
 
-// ===== REQUIREMENT 2: SUBTRACT MATRICES - ONE CHILD PER ELEMENT =====
 Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
         printf("Error: Matrices must have same dimensions\n");
@@ -429,7 +539,6 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
     
     int total_elements = m1->rows * m1->cols;
     printf("[INFO] Creating %d child processes (ONE per element) using fork()\n", total_elements);
-    printf("[INFO] Using PIPES for IPC and SIGNALS for synchronization\n");
     
     pid_t *pids = malloc(total_elements * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
@@ -452,16 +561,11 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
             }
             
             if (pid == 0) {
-                // CHILD PROCESS
                 close(pipes[idx][0]);
-                
                 double result_val = m1->data[i][j] - m2->data[i][j];
-                
                 write(pipes[idx][1], &result_val, sizeof(double));
                 close(pipes[idx][1]);
-                
                 kill(getppid(), SIGUSR1);
-                
                 exit(0);
             }
             
@@ -493,7 +597,6 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-// ===== REQUIREMENT 3: MULTIPLY MATRICES - ONE CHILD PER (ROW × COLUMN) =====
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->cols != m2->rows) {
         printf("Error: Invalid dimensions for multiplication\n");
@@ -504,7 +607,7 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
     snprintf(result_name, sizeof(result_name), "%s_times_%s", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
     
-    int total_processes = m1->rows * m2->cols; // ديناميكي حسب حجم المصفوفة
+    int total_processes = m1->rows * m2->cols;
     pid_t *pids = malloc(total_processes * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_processes * sizeof(int[2]));
     
@@ -526,11 +629,11 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
             }
             
             if (pid == 0) {
-                close(pipes[idx][0]); // Close read end
+                close(pipes[idx][0]);
                 
                 double result_val = 0.0;
                 for (int k = 0; k < m1->cols; k++) {
-                    result_val += m1->data[i][k] * m2->data[k][j]; // صف × عمود
+                    result_val += m1->data[i][k] * m2->data[k][j];
                 }
                 
                 write(pipes[idx][1], &result_val, sizeof(double));
@@ -539,13 +642,12 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
                 exit(0);
             }
             
-            close(pipes[idx][1]); // parent closes write end
+            close(pipes[idx][1]);
             pids[idx] = pid;
             idx++;
         }
     }
     
-    // Collect results
     idx = 0;
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
@@ -564,22 +666,14 @@ Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-// ===== REQUIREMENT 4: DETERMINANT - APPROPRIATE NUMBER OF CHILDREN =====
 double determinant_recursive_processes(Matrix *m) {
     if (m->rows != m->cols) return 0.0;
     
     int n = m->rows;
     
-    if (n == 1) {
-        return m->data[0][0];
-    }
+    if (n == 1) return m->data[0][0];
+    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
     
-    if (n == 2) {
-        return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
-    }
-    
-    // For n >= 3, use cofactor expansion with child processes
-    // Create ONE child per cofactor (appropriate number = n children)
     printf("[INFO] Computing determinant using %d child processes (cofactor expansion)\n", n);
     
     int num_processes = n;
@@ -588,7 +682,6 @@ double determinant_recursive_processes(Matrix *m) {
     
     workers_completed = 0;
     
-    // Create one child per column (cofactor)
     for (int j = 0; j < n; j++) {
         if (pipe(pipes[j]) == -1) {
             perror("pipe");
@@ -602,10 +695,8 @@ double determinant_recursive_processes(Matrix *m) {
         }
         
         if (pid == 0) {
-            // CHILD computes cofactor for column j
             close(pipes[j][0]);
             
-            // Create submatrix
             Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
             for (int i = 1; i < n; i++) {
                 int col_idx = 0;
@@ -616,7 +707,6 @@ double determinant_recursive_processes(Matrix *m) {
                 }
             }
             
-            // Recursive determinant
             double sub_det = determinant_recursive_processes(sub);
             double sign = (j % 2 == 0) ? 1.0 : -1.0;
             double cofactor = sign * m->data[0][j] * sub_det;
@@ -633,7 +723,6 @@ double determinant_recursive_processes(Matrix *m) {
         pids[j] = pid;
     }
     
-    // Collect cofactors
     double det = 0.0;
     for (int j = 0; j < n; j++) {
         double cofactor;
@@ -663,9 +752,8 @@ double determinant_parallel(Matrix *m) {
     return determinant_with_processes(m);
 }
 
-// ===== REQUIREMENT 4: EIGENVALUES - APPROPRIATE NUMBER OF CHILDREN =====
 void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors) {
-    (void)num_eigenvalues;  // Mark as intentionally unused for now
+    (void)num_eigenvalues;
     if (m->rows != m->cols) {
         printf("Error: Invalid matrix for eigenvalue computation\n");
         return;
@@ -673,12 +761,10 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     
     int n = m->rows;
     printf("[INFO] Computing eigenvalues using %d child processes for matrix-vector multiplications\n", n);
-    printf("[INFO] Using PIPES for IPC and SIGNALS for synchronization\n");
     
     double *v = malloc(n * sizeof(double));
     double *v_new = malloc(n * sizeof(double));
     
-    // Initialize with unit vector
     #pragma omp parallel for
     for (int i = 0; i < n; i++) {
         v[i] = 1.0;
@@ -689,7 +775,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     double tolerance = 1e-6;
     
     for (int iter = 0; iter < max_iterations; iter++) {
-        // Use child processes for matrix-vector multiply (one child per row)
         pid_t *pids = malloc(n * sizeof(pid_t));
         int (*pipes)[2] = malloc(n * sizeof(int[2]));
         
@@ -708,12 +793,10 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
             }
             
             if (pid == 0) {
-                // CHILD computes one row of matrix-vector product
                 close(pipes[i][0]);
                 
                 double row_result = 0.0;
                 
-                // Use OpenMP within child
                 #pragma omp parallel for reduction(+:row_result)
                 for (int j = 0; j < n; j++) {
                     row_result += m->data[i][j] * v[j];
@@ -730,7 +813,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
             pids[i] = pid;
         }
         
-        // Collect results
         for (int i = 0; i < n; i++) {
             read(pipes[i][0], &v_new[i], sizeof(double));
             close(pipes[i][0]);
@@ -740,7 +822,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
         free(pids);
         free(pipes);
         
-        // Compute eigenvalue (Rayleigh quotient)
         double lambda = 0.0;
         #pragma omp parallel for reduction(+:lambda)
         for (int i = 0; i < n; i++) {
@@ -749,7 +830,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
         
         normalize_vector(v_new, n);
         
-        // Check convergence
         double diff = 0.0;
         for (int i = 0; i < n; i++) {
             diff += fabs(v_new[i] - v[i]);
@@ -780,7 +860,7 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     free(v_new);
 }
 
-// ===== SINGLE-THREADED VERSIONS FOR COMPARISON (REQUIREMENT 7) =====
+// ===== SINGLE-THREADED VERSIONS =====
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
     
@@ -854,4 +934,3 @@ double determinant_single(Matrix *m) {
     }
     return det;
 }
-
