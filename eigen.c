@@ -10,23 +10,23 @@
 // ===== Helper Functions =====
 
 // Compute vector norm (Euclidean)
-double vector_norm(double *v, int n) {
-    double sum = 0.0;
-    for (int i = 0; i < n; i++) {
-        sum += v[i] * v[i];
-    }
-    return sqrt(sum);
-}
+//double vector_norm(double *v, int n) {
+//    double sum = 0.0;
+//    for (int i = 0; i < n; i++) {
+//        sum += v[i] * v[i];
+//    }
+//    return sqrt(sum);
+//}
 
 // Normalize a vector
-void normalize_vector(double *v, int n) {
-    double norm = vector_norm(v, n);
-    if (norm > 1e-10) {
-        for (int i = 0; i < n; i++) {
-            v[i] /= norm;
-        }
-    }
-}
+//void normalize_vector(double *v, int n) {
+//    double norm = vector_norm(v, n);
+//    if (norm > 1e-10) {
+//        for (int i = 0; i < n; i++) {
+//            v[i] /= norm;
+//        }
+//    }
+//}
 
 // Matrix-vector multiplication: result = M * v
 void matrix_vector_multiply(Matrix *m, double *v, double *result) {
