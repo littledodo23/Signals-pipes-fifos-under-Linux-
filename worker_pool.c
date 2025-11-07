@@ -39,7 +39,7 @@ void sigchld_handler(int signo) {
     }
 }
 
-void setup_signal_handlers() {
+void setup_signal_handlers(void) {
     struct sigaction sa_usr1;
     sa_usr1.sa_handler = sigusr1_handler;
     sigemptyset(&sa_usr1.sa_mask);
@@ -324,7 +324,6 @@ void cleanup_worker_pool(void) {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
-// ===== MATRIX OPERATIONS =====
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
         printf("Error: Matrices must have same dimensions\n");
@@ -336,7 +335,7 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
     int total_elements = m1->rows * m1->cols;
-    printf("[INFO] Creating %d child processes (ONE per element) using fork()\n", total_elements);
+    printf("[INFO] Creating %d child processes\n", total_elements);
     
     pid_t *pids = malloc(total_elements * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
@@ -387,8 +386,7 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
         }
     }
     
-    printf("[INFO] All %d child processes completed. Received %d SIGUSR1 signals.\n", 
-           total_elements, (int)workers_completed);
+    printf("[INFO] All %d processes completed\n", total_elements);
     
     free(pids);
     free(pipes);
@@ -408,7 +406,6 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
     int total_elements = m1->rows * m1->cols;
-    printf("[INFO] Creating %d child processes (ONE per element) using fork()\n", total_elements);
     
     pid_t *pids = malloc(total_elements * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
@@ -457,9 +454,6 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
         }
     }
     
-    printf("[INFO] All %d child processes completed. Received %d SIGUSR1 signals.\n", 
-           total_elements, (int)workers_completed);
-    
     free(pids);
     free(pipes);
     send_status_via_fifo("SUBTRACT_OPERATION_COMPLETE");
@@ -469,7 +463,7 @@ Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2) {
 
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->cols != m2->rows) {
-        printf("Error: Invalid dimensions for multiplication\n");
+        printf("Error: Invalid dimensions\n");
         return NULL;
     }
     
@@ -544,8 +538,6 @@ double determinant_recursive_processes(Matrix *m) {
     if (n == 1) return m->data[0][0];
     if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
     
-    printf("[INFO] Computing determinant using %d child processes (cofactor expansion)\n", n);
-    
     int num_processes = n;
     pid_t *pids = malloc(num_processes * sizeof(pid_t));
     int (*pipes)[2] = malloc(num_processes * sizeof(int[2]));
@@ -614,7 +606,6 @@ double determinant_with_processes(Matrix *m) {
         return 0.0;
     }
     
-    printf("[INFO] Computing determinant using multi-processing with PIPES and SIGNALS\n");
     return determinant_recursive_processes(m);
 }
 
@@ -625,12 +616,11 @@ double determinant_parallel(Matrix *m) {
 void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors) {
     (void)num_eigenvalues;
     if (m->rows != m->cols) {
-        printf("Error: Invalid matrix for eigenvalue computation\n");
+        printf("Error: Invalid matrix\n");
         return;
     }
     
     int n = m->rows;
-    printf("[INFO] Computing eigenvalues using %d child processes for matrix-vector multiplications\n", n);
     
     double *v = malloc(n * sizeof(double));
     double *v_new = malloc(n * sizeof(double));
@@ -710,7 +700,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
             for (int i = 0; i < n; i++) {
                 eigenvectors[0][i] = v_new[i];
             }
-            printf("[INFO] Converged after %d iterations using child processes\n", iter + 1);
             break;
         }
         
