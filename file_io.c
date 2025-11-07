@@ -60,7 +60,7 @@ Matrix *read_matrix_from_file(const char *filename) {
             fscanf(fp, "%lf", &m->data[i][j]);
 
     fclose(fp);
-    printf("✅ Matrix '%s' loaded successfully from %s\n", m->name, filename);
+    printf("Matrix '%s' loaded successfully from %s\n", m->name, filename);
     return m;
 }
 
@@ -125,7 +125,7 @@ void read_matrices_from_folder(const char *foldername) {
     }
 
     closedir(dir);
-    printf("✅ %d matrices loaded from folder: %s\n", count, foldername);
+    printf(" %d matrices loaded from folder: %s\n", count, foldername);
 }
 
 // ==========================================
@@ -146,7 +146,7 @@ void save_all_matrices_to_folder(const char *foldername) {
         save_matrix_to_file(matrices[i], filename);
     }
 
-    printf("✅ All matrices saved to folder: %s\n", foldername);
+    printf("All matrices saved to folder: %s\n", foldername);
 }
 
 // =================================
@@ -171,7 +171,7 @@ void read_matrices_from_folder_option() {
 
 void save_matrix_to_file_option() {
     if (matrix_count == 0) {
-        printf("⚠️ No matrices to save.\n");
+        printf(" No matrices to save.\n");
         return;
     }
 
@@ -200,3 +200,4 @@ void save_all_matrices_to_folder_option() {
     scanf("%99s", folder);
     save_all_matrices_to_folder(folder);
 }
+
