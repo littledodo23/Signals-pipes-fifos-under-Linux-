@@ -61,26 +61,6 @@ double get_time_ms(void) {
     return (tv.tv_sec * 1000.0) + (tv.tv_usec / 1000.0);
 }
 
-// ===== Helper Functions =====
-double vector_norm(double *v, int n) {
-    double sum = 0.0;
-    #pragma omp parallel for reduction(+:sum)
-    for (int i = 0; i < n; i++) {
-        sum += v[i] * v[i];
-    }
-    return sqrt(sum);
-}
-
-void normalize_vector(double *v, int n) {
-    double norm = vector_norm(v, n);
-    if (norm > 1e-10) {
-        #pragma omp parallel for
-        for (int i = 0; i < n; i++) {
-            v[i] /= norm;
-        }
-    }
-}
-
 // ===== Worker Process Loop =====
 void worker_process_loop(int input_fd, int output_fd) {
     WorkMessage msg;
@@ -324,6 +304,45 @@ void cleanup_worker_pool(void) {
     printf("[INFO] Worker pool cleaned up\n");
 }
 
+// ===== WORKER POOL OPERATIONS =====
+Matrix* add_matrices_with_pool(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_pool", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    send_status_via_fifo("POOL_ADD_START");
+    
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            Worker *w = get_available_worker();
+            if (!w) {
+                result->data[i][j] = m1->data[i][j] + m2->data[i][j];
+                continue;
+            }
+            
+            WorkMessage msg;
+            msg.op_type = OP_ADD;
+            msg.operand1 = m1->data[i][j];
+            msg.operand2 = m2->data[i][j];
+            
+            write(w->input_pipe[1], &msg, sizeof(WorkMessage));
+            read(w->output_pipe[0], &msg, sizeof(WorkMessage));
+            
+            result->data[i][j] = msg.result;
+            release_worker(w);
+        }
+    }
+    
+    send_status_via_fifo("POOL_ADD_COMPLETE");
+    return result;
+}
+
+// ===== FORK-BASED OPERATIONS (New Processes) =====
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     if (m1->rows != m2->rows || m1->cols != m2->cols) {
         printf("Error: Matrices must have same dimensions\n");
@@ -335,7 +354,6 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
     int total_elements = m1->rows * m1->cols;
-    printf("[INFO] Creating %d child processes\n", total_elements);
     
     pid_t *pids = malloc(total_elements * sizeof(pid_t));
     int (*pipes)[2] = malloc(total_elements * sizeof(int[2]));
@@ -385,8 +403,6 @@ Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2) {
             idx++;
         }
     }
-    
-    printf("[INFO] All %d processes completed\n", total_elements);
     
     free(pids);
     free(pipes);
@@ -538,6 +554,105 @@ double determinant_recursive_processes(Matrix *m) {
     if (n == 1) return m->data[0][0];
     if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
     
+    double det = 0.0;
+    
+    #pragma omp parallel for reduction(+:det)
+    for (int j = 0; j < n; j++) {
+        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) {
+                    sub->data[i-1][col_idx++] = m->data[i][k];
+                }
+            }
+        }
+        
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        double sub_det = determinant_openmp(sub);
+        det += sign * m->data[0][j] * sub_det;
+        
+        free_matrix(sub);
+    }
+    
+    return det;
+}
+
+// ===== SINGLE-THREADED OPERATIONS =====
+Matrix* add_matrices_single(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_single", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            result->data[i][j] = m1->data[i][j] + m2->data[i][j];
+        }
+    }
+    
+    return result;
+}
+
+Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_minus_%s_single", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
+    
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m1->cols; j++) {
+            result->data[i][j] = m1->data[i][j] - m2->data[i][j];
+        }
+    }
+    
+    return result;
+}
+
+Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2) {
+    if (m1->cols != m2->rows) return NULL;
+    
+    char result_name[128];
+    snprintf(result_name, sizeof(result_name), "%s_times_%s_single", m1->name, m2->name);
+    Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
+    
+    for (int i = 0; i < m1->rows; i++) {
+        for (int j = 0; j < m2->cols; j++) {
+            result->data[i][j] = 0.0;
+            for (int k = 0; k < m1->cols; k++) {
+                result->data[i][j] += m1->data[i][k] * m2->data[k][j];
+            }
+        }
+    }
+    
+    return result;
+}
+
+double determinant_single(Matrix *m) {
+    if (m->rows != m->cols) return 0.0;
+    int n = m->rows;
+    
+    if (n == 1) return m->data[0][0];
+    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    
+    double det = 0.0;
+    for (int j = 0; j < n; j++) {
+        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
+        for (int i = 1; i < n; i++) {
+            int col_idx = 0;
+            for (int k = 0; k < n; k++) {
+                if (k != j) sub->data[i-1][col_idx++] = m->data[i][k];
+            }
+        }
+        double sign = (j % 2 == 0) ? 1.0 : -1.0;
+        det += sign * m->data[0][j] * determinant_single(sub);
+        free_matrix(sub);
+    }
+    return det;
+} * m->data[1][1] - m->data[0][1] * m->data[1][0];
+    
     int num_processes = n;
     pid_t *pids = malloc(num_processes * sizeof(pid_t));
     int (*pipes)[2] = malloc(num_processes * sizeof(int[2]));
@@ -625,11 +740,18 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     double *v = malloc(n * sizeof(double));
     double *v_new = malloc(n * sizeof(double));
     
-    #pragma omp parallel for
     for (int i = 0; i < n; i++) {
         v[i] = 1.0;
     }
-    normalize_vector(v, n);
+    
+    double norm = 0.0;
+    for (int i = 0; i < n; i++) {
+        norm += v[i] * v[i];
+    }
+    norm = sqrt(norm);
+    for (int i = 0; i < n; i++) {
+        v[i] /= norm;
+    }
     
     int max_iterations = 1000;
     double tolerance = 1e-6;
@@ -656,8 +778,6 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
                 close(pipes[i][0]);
                 
                 double row_result = 0.0;
-                
-                #pragma omp parallel for reduction(+:row_result)
                 for (int j = 0; j < n; j++) {
                     row_result += m->data[i][j] * v[j];
                 }
@@ -683,12 +803,18 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
         free(pipes);
         
         double lambda = 0.0;
-        #pragma omp parallel for reduction(+:lambda)
         for (int i = 0; i < n; i++) {
             lambda += v_new[i] * v[i];
         }
         
-        normalize_vector(v_new, n);
+        norm = 0.0;
+        for (int i = 0; i < n; i++) {
+            norm += v_new[i] * v_new[i];
+        }
+        norm = sqrt(norm);
+        for (int i = 0; i < n; i++) {
+            v_new[i] /= norm;
+        }
         
         double diff = 0.0;
         for (int i = 0; i < n; i++) {
@@ -719,13 +845,18 @@ void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenv
     free(v_new);
 }
 
-Matrix* add_matrices_single(Matrix *m1, Matrix *m2) {
-    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+// ===== OPENMP OPERATIONS =====
+Matrix* add_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
     
     char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_plus_%s_single", m1->name, m2->name);
+    snprintf(result_name, sizeof(result_name), "%s_plus_%s_openmp", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
             result->data[i][j] = m1->data[i][j] + m2->data[i][j];
@@ -735,13 +866,17 @@ Matrix* add_matrices_single(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2) {
-    if (m1->rows != m2->rows || m1->cols != m2->cols) return NULL;
+Matrix* subtract_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->rows != m2->rows || m1->cols != m2->cols) {
+        printf("Error: Matrices must have same dimensions\n");
+        return NULL;
+    }
     
     char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_minus_%s_single", m1->name, m2->name);
+    snprintf(result_name, sizeof(result_name), "%s_minus_%s_openmp", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m1->cols, result_name);
     
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m1->cols; j++) {
             result->data[i][j] = m1->data[i][j] - m2->data[i][j];
@@ -751,13 +886,17 @@ Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2) {
-    if (m1->cols != m2->rows) return NULL;
+Matrix* multiply_matrices_openmp(Matrix *m1, Matrix *m2) {
+    if (m1->cols != m2->rows) {
+        printf("Error: Invalid dimensions\n");
+        return NULL;
+    }
     
     char result_name[128];
-    snprintf(result_name, sizeof(result_name), "%s_times_%s_single", m1->name, m2->name);
+    snprintf(result_name, sizeof(result_name), "%s_times_%s_openmp", m1->name, m2->name);
     Matrix *result = create_matrix(m1->rows, m2->cols, result_name);
     
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < m1->rows; i++) {
         for (int j = 0; j < m2->cols; j++) {
             result->data[i][j] = 0.0;
@@ -770,25 +909,13 @@ Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2) {
     return result;
 }
 
-double determinant_single(Matrix *m) {
-    if (m->rows != m->cols) return 0.0;
+double determinant_openmp(Matrix *m) {
+    if (m->rows != m->cols) {
+        printf("Error: Matrix must be square\n");
+        return 0.0;
+    }
+    
     int n = m->rows;
     
     if (n == 1) return m->data[0][0];
-    if (n == 2) return m->data[0][0] * m->data[1][1] - m->data[0][1] * m->data[1][0];
-    
-    double det = 0.0;
-    for (int j = 0; j < n; j++) {
-        Matrix *sub = create_matrix(n-1, n-1, "temp_sub");
-        for (int i = 1; i < n; i++) {
-            int col_idx = 0;
-            for (int k = 0; k < n; k++) {
-                if (k != j) sub->data[i-1][col_idx++] = m->data[i][k];
-            }
-        }
-        double sign = (j % 2 == 0) ? 1.0 : -1.0;
-        det += sign * m->data[0][j] * determinant_single(sub);
-        free_matrix(sub);
-    }
-    return det;
-}
+    if (n == 2) return m->data[0][0]
