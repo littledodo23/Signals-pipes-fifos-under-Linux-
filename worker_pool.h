@@ -41,44 +41,53 @@ typedef struct {
     double vector_data[MAX_VECTOR_SIZE];
 } WorkMessage;
 
+// ✅ NEW: FIFO Status Message
+typedef struct {
+    char status[64];
+    int worker_count;
+    int active_workers;
+    double timestamp;
+} StatusMessage;
+
 // ===== Global Pool =====
 #define MAX_WORKERS 100
 extern Worker *worker_pool;
 extern int pool_size;
 extern int max_idle_time;
 
-// ===== Worker Pool Management =====
+// ===== Functions =====
 void init_worker_pool(int size);
 void cleanup_worker_pool(void);
 Worker* get_available_worker(void);
 void release_worker(Worker *w);
 void age_workers(void);
+
 void worker_process_loop(int input_fd, int output_fd);
 
-// ===== Multi-Process Operations (with Pipes + Signals) =====
+// Matrix operations using multiprocessing
 Matrix* add_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_with_processes(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_with_processes(Matrix *m1, Matrix *m2);
 double determinant_with_processes(Matrix *m);
-void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
 
-// ===== Single-Threaded Versions (NO parallelism) =====
+// Single-threaded versions
 Matrix* add_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* subtract_matrices_single(Matrix *m1, Matrix *m2);
 Matrix* multiply_matrices_single(Matrix *m1, Matrix *m2);
 double determinant_single(Matrix *m);
 
-// ===== OpenMP Versions (Shared Memory Parallelism) ⭐ NEW =====
-Matrix* add_matrices_openmp(Matrix *m1, Matrix *m2);
-Matrix* subtract_matrices_openmp(Matrix *m1, Matrix *m2);
-Matrix* multiply_matrices_openmp(Matrix *m1, Matrix *m2);
-double determinant_openmp(Matrix *m);
-
-// ===== Helper Functions =====
-double determinant_parallel(Matrix *m);
+// Timing + signal handlers
 double get_time_ms(void);
 void setup_signal_handlers(void);
 void sigusr1_handler(int signo);
 void sigchld_handler(int signo);
+
+void compute_eigen_with_processes(Matrix *m, int num_eigenvalues, double *eigenvalues, double **eigenvectors);
+
+// ✅ NEW: FIFO Functions
+void init_status_fifo(void);
+void send_status_via_fifo(const char *status_msg);
+void cleanup_status_fifo(void);
+void monitor_status_fifo_background(void);
 
 #endif

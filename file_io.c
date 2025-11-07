@@ -60,7 +60,7 @@ Matrix *read_matrix_from_file(const char *filename) {
             fscanf(fp, "%lf", &m->data[i][j]);
 
     fclose(fp);
-    printf("Matrix '%s' loaded successfully from %s\n", m->name, filename);
+    printf("✅ Matrix '%s' loaded successfully from %s\n", m->name, filename);
     return m;
 }
 
@@ -68,21 +68,19 @@ Matrix *read_matrix_from_file(const char *filename) {
 // Save a single matrix to file
 // ===============================
 void save_matrix_to_file(Matrix *m, const char *filename) {
- //   printf("\n[DEBUG] Trying to save matrix '%s' to file: %s\n", m->name, filename);
-
+    // printf("\n[DEBUG] Trying to save matrix '%s' to file: %s\n", m->name, filename);
+    
     FILE *fp = fopen(filename, "w");
     if (!fp) {
         perror("[ERROR] Could not open file for writing");
         return;
     }
 
-    int header = fprintf(fp, "%s %d %d\n", m->name, m->rows, m->cols);
+    fprintf(fp, "%s %d %d\n", m->name, m->rows, m->cols);
 
-    int total_written = 0;
     for (int i = 0; i < m->rows; i++) {
         for (int j = 0; j < m->cols; j++) {
-            int n = fprintf(fp, "%.2lf ", m->data[i][j]);
-            total_written += n;
+            fprintf(fp, "%.2lf ", m->data[i][j]);
         }
         fprintf(fp, "\n");
     }
@@ -114,7 +112,7 @@ void read_matrices_from_folder(const char *foldername) {
 
     while ((entry = readdir(dir)) != NULL) {
         if (strstr(entry->d_name, ".txt")) {
-            char path[256];
+            char path[512];
             snprintf(path, sizeof(path), "%s/%s", foldername, entry->d_name);
             Matrix *m = read_matrix_from_file(path);
             if (m && matrix_count < MAX_MATRICES) {
@@ -125,7 +123,7 @@ void read_matrices_from_folder(const char *foldername) {
     }
 
     closedir(dir);
-    printf(" %d matrices loaded from folder: %s\n", count, foldername);
+    printf("✅ %d matrices loaded from folder: %s\n", count, foldername);
 }
 
 // ==========================================
@@ -146,7 +144,7 @@ void save_all_matrices_to_folder(const char *foldername) {
         save_matrix_to_file(matrices[i], filename);
     }
 
-    printf("All matrices saved to folder: %s\n", foldername);
+    printf("✅ All matrices saved to folder: %s\n", foldername);
 }
 
 // =================================
@@ -171,7 +169,7 @@ void read_matrices_from_folder_option() {
 
 void save_matrix_to_file_option() {
     if (matrix_count == 0) {
-        printf(" No matrices to save.\n");
+        printf("⚠️ No matrices to save.\n");
         return;
     }
 
@@ -200,4 +198,3 @@ void save_all_matrices_to_folder_option() {
     scanf("%99s", folder);
     save_all_matrices_to_folder(folder);
 }
-

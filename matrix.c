@@ -41,7 +41,9 @@ void print_matrix(Matrix *m) {
             printf("%8.2lf ", m->data[i][j]);
         printf("\n");
     }
-    void load_matrices_from_file(const char *filename) {
+}
+
+void load_matrices_from_file(const char *filename) {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
         printf("Failed to open file: %s\n", filename);
@@ -67,8 +69,6 @@ void print_matrix(Matrix *m) {
     }
 
     fclose(fp);
-}
-
 }
 
 // ===== Menu Options =====
