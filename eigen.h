@@ -33,7 +33,7 @@ void print_eigen_result(EigenResult *result, int matrix_size);
 // Vector operations
 double vector_norm(double *v, int n);
 void normalize_vector(double *v, int n);
-void matrix_vector_multiply(Matrix *m, double *v, douable *result);
+void matrix_vector_multiply(Matrix *m, double *v, double *result);  // ✅ FIXED: douable -> double
 void matrix_vector_multiply_parallel(Matrix *m, double *v, double *result);
 double dot_product(double *v1, double *v2, int n);
 void copy_vector(double *src, double *dst, int n);
