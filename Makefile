@@ -1,89 +1,91 @@
-# Makefile for Matrix Operations Project
-# Real-Time & Embedded Systems - Birzeit University
+# ====================================
+# Matrix Operations Project Makefile
+# Real-Time & Embedded Systems
+# ====================================
 
+# Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fopenmp -g
+CFLAGS = -Wall -Wextra -g -fopenmp -std=c11
 LDFLAGS = -lm -fopenmp
 
+# Target executable
+TARGET = matrix_operations
+
 # Source files
-SRCS = main.c matrix.c worker_pool.c eigen.c file_io.c config.c
-OBJS = $(SRCS:.c=.o)
-TARGET = matrix_ops
+SOURCES = main.c matrix.c worker_pool.c eigen.c config.c file_io.c
+OBJECTS = $(SOURCES:.c=.o)
+HEADERS = matrix.h worker_pool.h eigen.h config.h file_io.h
 
-# Build target
+# Default target
 all: $(TARGET)
-	@echo "✅ Build complete!"
-	@echo "Run with: ./$(TARGET) [config_file] [matrix_file]"
 
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
+# Link the executable
+$(TARGET): $(OBJECTS)
+	@echo "🔗 Linking $@..."
+	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
+	@echo "✅ Build successful: $@"
 
-# Compile object files
-%.o: %.c
+# Compile source files
+%.o: %.c $(HEADERS)
+	@echo "🔨 Compiling $<..."
 	$(CC) $(CFLAGS) -c $< -o $@
-
-# Dependencies
-main.o: main.c matrix.h worker_pool.h eigen.h config.h file_io.h
-matrix.o: matrix.c matrix.h
-worker_pool.o: worker_pool.c worker_pool.h matrix.h
-eigen.o: eigen.c eigen.h matrix.h
-file_io.o: file_io.c file_io.h matrix.h
-config.o: config.c config.h
-
-# Debug build
-debug: CFLAGS += -DDEBUG -g3
-debug: clean all
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJS) $(TARGET)
+	@echo "🧹 Cleaning build artifacts..."
+	rm -f $(OBJECTS) $(TARGET)
 	rm -f /tmp/matrix_status_fifo
-	@echo "✅ Cleaned build artifacts"
+	@echo "✅ Clean complete"
 
-# Run with default config
+# Deep clean (including output files)
+distclean: clean
+	@echo "🧹 Deep cleaning..."
+	rm -rf *.txt output_matrices/
+	@echo "✅ Deep clean complete"
+
+# Run the program
 run: $(TARGET)
+	@echo "🚀 Running $(TARGET)..."
+	./$(TARGET)
+
+# Run with config file
+run-config: $(TARGET)
+	@echo "🚀 Running $(TARGET) with config..."
 	./$(TARGET) matrix_config.txt
 
-# Run with valgrind memory check
+# Debug build
+debug: CFLAGS += -DDEBUG -O0
+debug: clean $(TARGET)
+	@echo "🐛 Debug build complete"
+
+# Optimized build
+release: CFLAGS += -O3 -DNDEBUG
+release: clean $(TARGET)
+	@echo "🚀 Release build complete"
+
+# Check for memory leaks with valgrind
 valgrind: $(TARGET)
+	@echo "🔍 Running valgrind..."
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TARGET)
 
-# Create sample config file
-config:
-	@echo "4 60" > matrix_config.txt
-	@echo "matrices" >> matrix_config.txt
-	@echo "✅ Created matrix_config.txt"
-
-# Create sample matrices folder
-matrices:
-	mkdir -p matrices
-	@echo "A 3 3" > matrices/A.txt
-	@echo "1.0 2.0 3.0" >> matrices/A.txt
-	@echo "4.0 5.0 6.0" >> matrices/A.txt
-	@echo "7.0 8.0 9.0" >> matrices/A.txt
-	@echo "B 3 3" > matrices/B.txt
-	@echo "9.0 8.0 7.0" >> matrices/B.txt
-	@echo "6.0 5.0 4.0" >> matrices/B.txt
-	@echo "3.0 2.0 1.0" >> matrices/B.txt
-	@echo "✅ Created sample matrices in matrices/"
-
-# Setup everything
-setup: config matrices
-	@echo "✅ Setup complete! Ready to compile and run."
+# Generate dependencies
+depend: $(SOURCES)
+	$(CC) -MM $(SOURCES) > .depend
 
 # Help target
 help:
-	@echo "Matrix Operations Project - Makefile"
-	@echo ""
-	@echo "Targets:"
+	@echo "Available targets:"
 	@echo "  all       - Build the project (default)"
-	@echo "  debug     - Build with debug symbols"
 	@echo "  clean     - Remove build artifacts"
-	@echo "  run       - Build and run with default config"
+	@echo "  distclean - Remove all generated files"
+	@echo "  run       - Build and run the program"
+	@echo "  run-config - Build and run with config file"
+	@echo "  debug     - Build with debug symbols"
+	@echo "  release   - Build optimized release version"
 	@echo "  valgrind  - Run with memory leak detection"
-	@echo "  config    - Create sample config file"
-	@echo "  matrices  - Create sample matrices folder"
-	@echo "  setup     - Create config and sample matrices"
 	@echo "  help      - Show this help message"
 
-.PHONY: all debug clean run valgrind config matrices setup help
+.PHONY: all clean distclean run run-config debug release valgrind help depend
+
+# Include dependencies if they exist
+-include .depend
