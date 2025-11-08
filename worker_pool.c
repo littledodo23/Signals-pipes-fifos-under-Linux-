@@ -652,6 +652,7 @@ double determinant_single(Matrix *m) {
     }
     return det;
 }
+
 double determinant_with_processes(Matrix *m) {
     if (m->rows != m->cols) {
         printf("Error: Matrix must be square\n");
